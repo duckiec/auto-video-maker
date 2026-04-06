@@ -11,10 +11,12 @@ from __future__ import annotations
 import os
 import random
 import re
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import PIL.Image
 import whisper
 from moviepy.editor import AudioFileClip, CompositeVideoClip, TextClip, VideoFileClip, vfx
 
@@ -24,6 +26,15 @@ DEFAULT_BACKGROUND_VIDEO = "assets/gameplay.mp4"
 DEFAULT_WHISPER_MODEL = "base"
 OUTPUT_WIDTH = 1080
 OUTPUT_HEIGHT = 1920
+
+# Pillow >=10 removed Image.ANTIALIAS; MoviePy 1.0.3 still references it.
+if not hasattr(PIL.Image, "ANTIALIAS") and hasattr(PIL.Image, "Resampling"):
+    PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
+elif not hasattr(PIL.Image, "ANTIALIAS"):
+    warnings.warn(
+        "Pillow does not expose ANTIALIAS or Resampling; MoviePy resize may fail.",
+        RuntimeWarning,
+    )
 
 
 class VideoGenerationError(RuntimeError):
