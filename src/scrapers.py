@@ -19,7 +19,6 @@ import praw
 import requests
 import wikipediaapi
 from dotenv import load_dotenv
-from openai import OpenAI
 
 from config_store import get_config
 
@@ -72,6 +71,20 @@ def _pick_openrouter_fallback_model(current_model: str) -> str | None:
         if free_candidates:
             return free_candidates[0]
     return candidates[0] if candidates else None
+
+
+def _extract_openrouter_error_message(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        return (response.text or "").strip() or f"HTTP {response.status_code}"
+    if isinstance(payload, dict):
+        error_obj = payload.get("error")
+        if isinstance(error_obj, dict):
+            message = str(error_obj.get("message", "")).strip()
+            if message:
+                return message
+    return str(payload)
 
 
 def _retry(operation: Callable[[], str], attempts: int = 3, delay_seconds: float = 1.5) -> str:
@@ -231,54 +244,80 @@ def get_ai_story() -> str:
 
     def _fetch() -> str:
         nonlocal selected_model, fallback_attempted
-        client = OpenAI(api_key=api_key, base_url=openrouter_base_url)
+        base_url = str(openrouter_base_url).rstrip("/")
+        chat_url = f"{base_url}/chat/completions"
         completion = None
         for _ in range(2):  # first try + one optional fallback try
-            try:
-                completion = client.chat.completions.create(
-                    model=selected_model,
-                    temperature=1.0,
-                    max_tokens=220,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You write punchy, high-retention short-form stories for voiceover narration. "
-                                "Output only plain text."
-                            ),
-                        },
-                        {
-                            "role": "user",
-                            "content": (
-                                "Write a crazy historical fact as a vivid mini-story in about "
-                                f"{target_ai_words} words. Keep it clean, cinematic, and engaging from "
-                                "the first sentence."
-                            ),
-                        },
-                    ],
-                    extra_headers={
-                        "HTTP-Referer": openrouter_referer,
-                        "X-Title": openrouter_title,
+            payload = {
+                "model": selected_model,
+                "temperature": 1.0,
+                "max_tokens": 220,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You write punchy, high-retention short-form stories for voiceover narration. "
+                            "Output only plain text."
+                        ),
                     },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Write a crazy historical fact as a vivid mini-story in about "
+                            f"{target_ai_words} words. Keep it clean, cinematic, and engaging from "
+                            "the first sentence."
+                        ),
+                    },
+                ],
+            }
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": openrouter_referer,
+                "X-Title": openrouter_title,
+            }
+            try:
+                response = requests.post(
+                    chat_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=45,
                 )
+                if response.status_code >= 400:
+                    error_message = _extract_openrouter_error_message(response)
+                    if (
+                        response.status_code == 404
+                        and not fallback_attempted
+                        and _is_openrouter_model_unavailable_error(
+                            ScraperError(error_message), selected_model
+                        )
+                    ):
+                        fallback_model = _pick_openrouter_fallback_model(selected_model)
+                        if fallback_model:
+                            LOGGER.warning(
+                                "OpenRouter model '%s' unavailable, retrying with fallback '%s'.",
+                                selected_model,
+                                fallback_model,
+                            )
+                            selected_model = fallback_model
+                            fallback_attempted = True
+                            continue
+                    raise ScraperError(
+                        f"OpenRouter request failed ({response.status_code}): {error_message}"
+                    )
+                completion = response.json()
                 break
             except Exception as error:  # noqa: BLE001 - transport/provider errors vary by SDK/version
-                if not fallback_attempted and _is_openrouter_model_unavailable_error(error, selected_model):
-                    fallback_model = _pick_openrouter_fallback_model(selected_model)
-                    if fallback_model:
-                        LOGGER.warning(
-                            "OpenRouter model '%s' unavailable, retrying with fallback '%s'.",
-                            selected_model,
-                            fallback_model,
-                        )
-                        selected_model = fallback_model
-                        fallback_attempted = True
-                        continue
+                if isinstance(error, ScraperError):
+                    raise
                 raise
         if completion is None:
             raise ScraperError("OpenRouter request failed after fallback attempts.")
 
-        text = _normalize_text(completion.choices[0].message.content or "")
+        choices = completion.get("choices", []) if isinstance(completion, dict) else []
+        first_choice = choices[0] if choices else {}
+        message = first_choice.get("message", {}) if isinstance(first_choice, dict) else {}
+        text = _normalize_text(str(message.get("content", "")).strip())
         if not text:
             raise ScraperError("OpenRouter returned empty content.")
 
