@@ -31,8 +31,7 @@ class ScraperError(RuntimeError):
 
 
 def has_reddit_credentials() -> bool:
-    """Return True when required Reddit API credentials are loaded."""
-
+    """Return True if both REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET are set, else False."""
     return bool(os.getenv("REDDIT_CLIENT_ID") and os.getenv("REDDIT_CLIENT_SECRET"))
 
 

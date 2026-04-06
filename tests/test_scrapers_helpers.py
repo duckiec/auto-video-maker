@@ -44,6 +44,13 @@ _install_scraper_import_stubs()
 scrapers = importlib.import_module("scrapers")
 
 
+def _set_shuffle_order(*ordered_values: str):
+    def _apply(items: list[str]) -> None:
+        items[:] = list(ordered_values)
+
+    return _apply
+
+
 class TestScrapersHelpers(unittest.TestCase):
     def test_retry_retries_then_succeeds(self) -> None:
         calls = {"count": 0}
@@ -71,7 +78,7 @@ class TestScrapersHelpers(unittest.TestCase):
             patch("scrapers.get_reddit_story", return_value="reddit text"),
             patch("scrapers.get_wiki_fact", return_value="wiki text"),
             patch("scrapers.get_ai_story", return_value="ai text"),
-            patch("scrapers.random.shuffle", side_effect=lambda items: items.__setitem__(slice(None), ["wiki", "ai", "reddit"])),
+            patch("scrapers.random.shuffle", side_effect=_set_shuffle_order("wiki", "ai", "reddit")),
         ):
             result = scrapers.get_random_content()
 
@@ -84,7 +91,7 @@ class TestScrapersHelpers(unittest.TestCase):
             patch("scrapers.get_wiki_fact", return_value="wiki text"),
             patch("scrapers.get_ai_story", return_value="ai text"),
             patch("scrapers.has_reddit_credentials", return_value=False),
-            patch("scrapers.random.shuffle", side_effect=lambda items: items.__setitem__(slice(None), ["reddit", "wiki"])),
+            patch("scrapers.random.shuffle", side_effect=_set_shuffle_order("reddit", "wiki")),
             patch("scrapers.LOGGER.warning") as warning_mock,
         ):
             result = scrapers.get_random_content()
@@ -96,7 +103,7 @@ class TestScrapersHelpers(unittest.TestCase):
         with (
             patch("scrapers.get_config", return_value={"scrapers": {"selection_pool": ["reddit"]}}),
             patch("scrapers.has_reddit_credentials", return_value=False),
-            patch("scrapers.random.shuffle", side_effect=lambda items: items.__setitem__(slice(None), ["reddit"])),
+            patch("scrapers.random.shuffle", side_effect=_set_shuffle_order("reddit")),
         ):
             with self.assertRaises(scrapers.ScraperError):
                 scrapers.get_random_content()
