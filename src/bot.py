@@ -49,7 +49,7 @@ def _configure_logging() -> None:
 
 
 def _choose_scraper() -> tuple[str, Callable[[], str]]:
-    from scrapers import get_ai_story, get_reddit_story, get_wiki_fact
+    from scrapers import get_ai_story, get_reddit_story, get_wiki_fact, has_reddit_credentials
 
     config = get_config()
     selection_pool = config.get("scrapers", {}).get("selection_pool", ["reddit", "wiki", "ai"])
@@ -62,8 +62,15 @@ def _choose_scraper() -> tuple[str, Callable[[], str]]:
     available = [name for name in selection_pool if name in sources]
     if not available:
         available = list(sources.keys())
-    name = random.choice(available)
-    return name, sources[name]
+    random.shuffle(available)
+    for name in available:
+        if name == "reddit" and not has_reddit_credentials():
+            logging.getLogger("pipeline").warning(
+                "Missing Reddit credentials, falling back to next source..."
+            )
+            continue
+        return name, sources[name]
+    raise RuntimeError("No available scraper source in selection pool.")
 
 
 def _safe_trim(text: str, max_chars: int = 120) -> str:

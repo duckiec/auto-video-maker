@@ -33,8 +33,32 @@
 
         <section class="rounded border border-slate-800 bg-slate-900 p-4">
           <h2 class="mb-3 font-semibold">Content + AI</h2>
-          <label class="mb-2 block text-sm">Scraper pool (comma-separated: reddit,wiki,ai)</label>
-          <input class="w-full rounded bg-slate-800 p-2" name="selection_pool" value="{{ config.scrapers.selection_pool | join(',') }}" />
+          <p class="mb-2 block text-sm">Scraper pool (select one or more sources)</p>
+          <div class="space-y-2">
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" name="selection_pool" value="wiki" {% if "wiki" in config.scrapers.selection_pool %}checked{% endif %} />
+              Wikipedia
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" name="selection_pool" value="ai" {% if "ai" in config.scrapers.selection_pool %}checked{% endif %} />
+              AI Story
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm {% if not reddit_credentials_loaded %}text-slate-500{% endif %}">
+              <input
+                type="checkbox"
+                name="selection_pool"
+                value="reddit"
+                {% if "reddit" in config.scrapers.selection_pool and reddit_credentials_loaded %}checked{% endif %}
+                {% if not reddit_credentials_loaded %}disabled{% endif %}
+              />
+              Reddit
+              {% if not reddit_credentials_loaded %}
+              <span class="rounded bg-amber-500/20 px-2 py-0.5 text-xs font-semibold text-amber-300">
+                Requires Reddit API Keys in .env (Manual approval now required by Reddit).
+              </span>
+              {% endif %}
+            </label>
+          </div>
 
           <label class="mb-2 mt-4 block text-sm">Reddit subreddits (comma-separated)</label>
           <input class="w-full rounded bg-slate-800 p-2" name="reddit_subreddits" value="{{ config.scrapers.reddit.subreddits | join(',') }}" />

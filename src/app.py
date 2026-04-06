@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -153,6 +154,9 @@ def generate_now():
 @app.get("/settings")
 def settings_page():
     config = get_config()
+    reddit_credentials_loaded = bool(
+        os.getenv("REDDIT_CLIENT_ID") and os.getenv("REDDIT_CLIENT_SECRET")
+    )
     openrouter_models: List[str] = []
     openrouter_models_error = ""
     try:
@@ -164,6 +168,7 @@ def settings_page():
     return render_template(
         "settings.html",
         config=config,
+        reddit_credentials_loaded=reddit_credentials_loaded,
         openrouter_models=openrouter_models,
         openrouter_models_error=openrouter_models_error,
     )
@@ -175,7 +180,7 @@ def save_settings():
 
     schedule_times_raw = request.form.get("scheduler_times", "08:00,17:00")
     schedule_extra_raw = request.form.get("scheduler_extra_times", "")
-    selection_pool_raw = request.form.get("selection_pool", "reddit,wiki,ai")
+    selected_sources = request.form.getlist("selection_pool")
     reddit_subreddits_raw = request.form.get("reddit_subreddits", "AskReddit,AmItheAsshole")
     uploader_tags_raw = request.form.get("uploader_base_tags", "#shorts,#story,#viral")
 
@@ -197,8 +202,8 @@ def save_settings():
     )
 
     config["scrapers"]["selection_pool"] = [
-        value.strip() for value in selection_pool_raw.split(",") if value.strip()
-    ]
+        value.strip() for value in selected_sources if value.strip() in {"reddit", "wiki", "ai"}
+    ] or ["wiki", "ai"]
     config["scrapers"]["reddit"]["subreddits"] = [
         value.strip() for value in reddit_subreddits_raw.split(",") if value.strip()
     ]

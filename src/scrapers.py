@@ -12,6 +12,7 @@ import os
 import random
 import re
 import time
+import logging
 from typing import Callable, Dict, List
 
 import praw
@@ -23,9 +24,16 @@ from openai import OpenAI
 from config_store import get_config
 
 load_dotenv()
+LOGGER = logging.getLogger(__name__)
 
 class ScraperError(RuntimeError):
     """Raised when a scraper cannot return valid content."""
+
+
+def has_reddit_credentials() -> bool:
+    """Return True when required Reddit API credentials are loaded."""
+
+    return bool(os.getenv("REDDIT_CLIENT_ID") and os.getenv("REDDIT_CLIENT_SECRET"))
 
 
 def _normalize_text(text: str) -> str:
@@ -76,7 +84,7 @@ def get_reddit_story() -> str:
     max_reddit_words = int(scraper_config.get("max_words", 200))
     time_filter = str(scraper_config.get("time_filter", "day"))
 
-    if not client_id or not client_secret:
+    if not has_reddit_credentials():
         raise ScraperError(
             "Missing Reddit credentials. Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET."
         )
@@ -284,5 +292,11 @@ def get_random_content() -> str:
     if not available:
         available = list(sources.keys())
 
-    selected = sources[random.choice(available)]
-    return selected()
+    random.shuffle(available)
+    for source_name in available:
+        if source_name == "reddit" and not has_reddit_credentials():
+            LOGGER.warning("Missing Reddit credentials, falling back to next source...")
+            continue
+        return sources[source_name]()
+
+    raise ScraperError("No available content source could be selected from the configured pool.")
