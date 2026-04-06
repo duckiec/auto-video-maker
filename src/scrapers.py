@@ -24,6 +24,7 @@ from config_store import get_config
 
 load_dotenv()
 LOGGER = logging.getLogger(__name__)
+MAX_OPENROUTER_MODEL_ATTEMPTS = 2  # initial model + one fallback model
 
 class ScraperError(RuntimeError):
     """Raised when a scraper cannot return valid content."""
@@ -246,8 +247,7 @@ def get_ai_story() -> str:
         nonlocal selected_model, fallback_attempted
         base_url = str(openrouter_base_url).rstrip("/")
         chat_url = f"{base_url}/chat/completions"
-        completion = None
-        for _ in range(2):  # first try + one optional fallback try
+        for _ in range(MAX_OPENROUTER_MODEL_ATTEMPTS):
             payload = {
                 "model": selected_model,
                 "temperature": 1.0,
@@ -306,8 +306,6 @@ def get_ai_story() -> str:
                 )
             completion = response.json()
             break
-        if completion is None:
-            raise ScraperError("OpenRouter request failed after fallback attempts.")
 
         if not isinstance(completion, dict):
             raise ScraperError("OpenRouter returned a non-object JSON payload.")
