@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   video-factory:
     image: ghcr.io/duckiec/auto-video-maker:latest
