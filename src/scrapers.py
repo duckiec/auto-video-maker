@@ -56,7 +56,7 @@ def _is_openrouter_model_unavailable_error(error: Exception, model_name: str) ->
 
 
 def _pick_openrouter_fallback_model(current_model: str) -> str | None:
-    """Pick an alternate OpenRouter model, preferring free-tier fallbacks when current model is free."""
+    """Pick an alternate OpenRouter model; prefer free-tier fallback for free current model, otherwise any."""
     try:
         available_models = get_openrouter_models()
     except Exception:  # noqa: BLE001 - non-fatal fallback probe
@@ -232,7 +232,8 @@ def get_ai_story() -> str:
     def _fetch() -> str:
         nonlocal selected_model, fallback_attempted
         client = OpenAI(api_key=api_key, base_url=openrouter_base_url)
-        while True:
+        completion = None
+        for _ in range(2):  # first try + one optional fallback try
             try:
                 completion = client.chat.completions.create(
                     model=selected_model,
@@ -274,6 +275,8 @@ def get_ai_story() -> str:
                         fallback_attempted = True
                         continue
                 raise
+        if completion is None:
+            raise ScraperError("OpenRouter request failed after fallback attempts.")
 
         text = _normalize_text(completion.choices[0].message.content or "")
         if not text:
