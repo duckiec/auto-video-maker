@@ -1,0 +1,260 @@
+"""Content sourcing functions for autonomous short-video generation.
+
+Phase 1 scope:
+- Reddit stories via PRAW
+- Wikipedia random facts
+- AI story generation via OpenRouter (OpenAI-compatible API)
+"""
+
+from __future__ import annotations
+
+import os
+import random
+import re
+import time
+from typing import Callable, Dict, List
+
+import praw
+import requests
+import wikipediaapi
+from dotenv import load_dotenv
+from openai import OpenAI
+
+from config_store import get_config
+
+load_dotenv()
+
+class ScraperError(RuntimeError):
+    """Raised when a scraper cannot return valid content."""
+
+
+def _normalize_text(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", (text or "").strip())
+    return cleaned
+
+
+def _word_count(text: str) -> int:
+    return len(_normalize_text(text).split())
+
+
+def _truncate_to_words(text: str, max_words: int) -> str:
+    words = _normalize_text(text).split()
+    return " ".join(words[:max_words])
+
+
+def _retry(operation: Callable[[], str], attempts: int = 3, delay_seconds: float = 1.5) -> str:
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            result = operation()
+            if not result:
+                raise ScraperError("Operation returned empty text")
+            return result
+        except Exception as error:  # noqa: BLE001 - broad for resilient pipeline wrapper
+            last_error = error
+            if attempt == attempts:
+                break
+            time.sleep(delay_seconds * attempt)
+    raise ScraperError(f"Operation failed after {attempts} attempts: {last_error}")
+
+
+def get_reddit_story() -> str:
+    """Fetch a short Reddit story from top daily posts under 200 words."""
+
+    config = get_config()
+    scraper_config = config.get("scrapers", {}).get("reddit", {})
+    api_config = config.get("api", {})
+
+    client_id = os.getenv("REDDIT_CLIENT_ID")
+    client_secret = os.getenv("REDDIT_CLIENT_SECRET")
+    reddit_user_agent = os.getenv(
+        "REDDIT_USER_AGENT",
+        api_config.get("reddit_user_agent", "video-factory/1.0 (by u/auto-video-bot)"),
+    )
+    subreddit_names = scraper_config.get("subreddits", ["AskReddit", "AmItheAsshole"])
+    post_limit = int(scraper_config.get("post_limit", 50))
+    max_reddit_words = int(scraper_config.get("max_words", 200))
+    time_filter = str(scraper_config.get("time_filter", "day"))
+
+    if not client_id or not client_secret:
+        raise ScraperError(
+            "Missing Reddit credentials. Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET."
+        )
+
+    def _fetch() -> str:
+        reddit = praw.Reddit(
+            client_id=client_id,
+            client_secret=client_secret,
+            user_agent=reddit_user_agent,
+            check_for_async=False,
+        )
+
+        candidates: List[str] = []
+        for subreddit_name in subreddit_names:
+            subreddit = reddit.subreddit(subreddit_name)
+            for post in subreddit.top(time_filter=time_filter, limit=post_limit):
+                if post.stickied or post.over_18:
+                    continue
+
+                body = _normalize_text(getattr(post, "selftext", ""))
+                title = _normalize_text(getattr(post, "title", ""))
+
+                text = body if body else title
+                words = _word_count(text)
+
+                if not text or words == 0:
+                    continue
+                if words <= max_reddit_words:
+                    candidates.append(text)
+
+        if not candidates:
+            raise ScraperError("No suitable Reddit posts found under configured max words.")
+
+        return random.choice(candidates)
+
+    return _retry(_fetch)
+
+
+def get_wiki_fact() -> str:
+    """Fetch a random Wikipedia summary suitable for short narration."""
+
+    config = get_config()
+    scraper_config = config.get("scrapers", {}).get("wiki", {})
+    api_config = config.get("api", {})
+
+    wiki_user_agent = os.getenv(
+        "WIKI_USER_AGENT",
+        api_config.get("wiki_user_agent", "video-factory/1.0 (contact: local)"),
+    )
+    wiki_max_words = int(scraper_config.get("max_words", 120))
+    wiki_min_words = int(scraper_config.get("min_words", 15))
+
+    def _fetch() -> str:
+        session = requests.Session()
+        session.headers.update({"User-Agent": wiki_user_agent})
+
+        response = session.get(
+            "https://en.wikipedia.org/w/api.php",
+            params={
+                "action": "query",
+                "format": "json",
+                "list": "random",
+                "rnnamespace": 0,
+                "rnlimit": 1,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+
+        random_title = (
+            response.json()
+            .get("query", {})
+            .get("random", [{}])[0]
+            .get("title", "")
+        )
+        if not random_title:
+            raise ScraperError("Wikipedia random title lookup returned empty result.")
+
+        wiki = wikipediaapi.Wikipedia(user_agent=wiki_user_agent, language="en")
+        page = wiki.page(random_title)
+
+        if not page.exists() or not page.summary:
+            raise ScraperError("Wikipedia page has no summary.")
+
+        summary = _normalize_text(page.summary)
+        if _word_count(summary) > wiki_max_words:
+            summary = _truncate_to_words(summary, wiki_max_words)
+
+        if _word_count(summary) < wiki_min_words:
+            raise ScraperError("Wikipedia summary too short to be useful.")
+
+        return summary
+
+    return _retry(_fetch, attempts=4, delay_seconds=1.2)
+
+
+def get_ai_story() -> str:
+    """Generate a high-retention ~100-word story using OpenRouter."""
+
+    config = get_config()
+    ai_config = config.get("scrapers", {}).get("ai", {})
+    api_config = config.get("api", {})
+
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise ScraperError("Missing OPENROUTER_API_KEY in environment.")
+
+    openrouter_base_url = api_config.get("openrouter_base_url", "https://openrouter.ai/api/v1")
+    openrouter_model = os.getenv(
+        "OPENROUTER_MODEL",
+        ai_config.get("model", "deepseek/deepseek-chat-v3-0324:free"),
+    )
+    target_ai_words = int(ai_config.get("target_words", 100))
+    ai_max_words = int(ai_config.get("max_words", 140))
+    ai_min_words = int(ai_config.get("min_words", 60))
+    openrouter_referer = api_config.get("openrouter_referer", "https://local.video-factory")
+    openrouter_title = api_config.get("openrouter_title", "Auto Video Maker")
+
+    def _fetch() -> str:
+        client = OpenAI(api_key=api_key, base_url=openrouter_base_url)
+
+        completion = client.chat.completions.create(
+            model=openrouter_model,
+            temperature=1.0,
+            max_tokens=220,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You write punchy, high-retention short-form stories for voiceover narration. "
+                        "Output only plain text."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Write a crazy historical fact as a vivid mini-story in about "
+                        f"{target_ai_words} words. Keep it clean, cinematic, and engaging from "
+                        "the first sentence."
+                    ),
+                },
+            ],
+            extra_headers={
+                "HTTP-Referer": openrouter_referer,
+                "X-Title": openrouter_title,
+            },
+        )
+
+        text = _normalize_text(completion.choices[0].message.content or "")
+        if not text:
+            raise ScraperError("OpenRouter returned empty content.")
+
+        word_count = _word_count(text)
+        if word_count > ai_max_words:
+            text = _truncate_to_words(text, ai_max_words)
+
+        if _word_count(text) < ai_min_words:
+            raise ScraperError("AI story was too short.")
+
+        return text
+
+    return _retry(_fetch)
+
+
+def get_random_content() -> str:
+    """Pick one source function at random and return narration text."""
+
+    config = get_config()
+    selection_pool = config.get("scrapers", {}).get("selection_pool", ["reddit", "wiki", "ai"])
+
+    sources: Dict[str, Callable[[], str]] = {
+        "reddit": get_reddit_story,
+        "wiki": get_wiki_fact,
+        "ai": get_ai_story,
+    }
+    available = [name for name in selection_pool if name in sources]
+    if not available:
+        available = list(sources.keys())
+
+    selected = sources[random.choice(available)]
+    return selected()

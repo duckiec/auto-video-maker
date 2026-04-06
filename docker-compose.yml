@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  video-factory:
+    build: .
+    container_name: video-factory
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./assets:/video-factory/assets
+      - ./output:/video-factory/output
+      - ./cookies:/video-factory/cookies
+      - ./config.json:/video-factory/config.json
+      - ./history.db:/video-factory/history.db
+    ports:
+      - "5000:5000"
+    command: ["python", "src/app.py"]

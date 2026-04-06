@@ -1,0 +1,161 @@
+"""Flask dashboard for history, settings, and manual pipeline trigger."""
+
+from __future__ import annotations
+
+import threading
+from pathlib import Path
+from typing import Any
+
+from flask import Flask, redirect, render_template, request, send_from_directory, url_for
+
+from bot import run_pipeline, start_scheduler_loop
+from config_store import get_config, save_config
+from db import fetch_recent_history, init_db
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+TEMPLATE_DIR = PROJECT_ROOT / "templates"
+
+app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
+
+JOB_STATE: dict[str, Any] = {
+    "running": False,
+    "last_status": "idle",
+    "last_message": "No manual run started yet.",
+}
+JOB_LOCK = threading.Lock()
+_SCHEDULER_STARTED = False
+
+
+def _start_scheduler_thread_once() -> None:
+    global _SCHEDULER_STARTED
+    if _SCHEDULER_STARTED:
+        return
+
+    thread = threading.Thread(target=start_scheduler_loop, daemon=True, name="pipeline-scheduler")
+    thread.start()
+    _SCHEDULER_STARTED = True
+
+
+def _manual_pipeline_runner() -> None:
+    with JOB_LOCK:
+        if JOB_STATE["running"]:
+            return
+        JOB_STATE["running"] = True
+        JOB_STATE["last_status"] = "running"
+        JOB_STATE["last_message"] = "Pipeline run started..."
+
+    try:
+        result = run_pipeline()
+        with JOB_LOCK:
+            if result is None:
+                JOB_STATE["last_status"] = "failed"
+                JOB_STATE["last_message"] = "Run finished with no upload (error or duplicate skip)."
+            else:
+                JOB_STATE["last_status"] = "success"
+                JOB_STATE["last_message"] = (
+                    f"Uploaded {Path(result.video_path).name} via {result.platform} from {result.source}."
+                )
+    except Exception as error:  # noqa: BLE001
+        with JOB_LOCK:
+            JOB_STATE["last_status"] = "failed"
+            JOB_STATE["last_message"] = f"Manual run crashed: {error}"
+    finally:
+        with JOB_LOCK:
+            JOB_STATE["running"] = False
+
+
+@app.before_request
+def _ensure_scheduler_and_db() -> None:
+    config = get_config()
+    db_path = config.get("paths", {}).get("history_db", "history.db")
+    init_db(db_path)
+    _start_scheduler_thread_once()
+
+
+@app.get("/")
+def index():
+    config = get_config()
+    db_path = config.get("paths", {}).get("history_db", "history.db")
+    history = fetch_recent_history(limit=100, db_path=db_path)
+
+    with JOB_LOCK:
+        state = dict(JOB_STATE)
+
+    return render_template("index.html", history=history, job_state=state)
+
+
+@app.post("/generate-now")
+def generate_now():
+    with JOB_LOCK:
+        running = JOB_STATE["running"]
+
+    if not running:
+        thread = threading.Thread(target=_manual_pipeline_runner, daemon=True, name="manual-run")
+        thread.start()
+
+    return redirect(url_for("index"))
+
+
+@app.get("/settings")
+def settings_page():
+    return render_template("settings.html", config=get_config())
+
+
+@app.post("/settings")
+def save_settings():
+    config = get_config()
+
+    schedule_times_raw = request.form.get("scheduler_times", "08:00,17:00")
+    schedule_extra_raw = request.form.get("scheduler_extra_times", "")
+    selection_pool_raw = request.form.get("selection_pool", "reddit,wiki,ai")
+    reddit_subreddits_raw = request.form.get("reddit_subreddits", "AskReddit,AmItheAsshole")
+    uploader_tags_raw = request.form.get("uploader_base_tags", "#shorts,#story,#viral")
+
+    config["scheduler"]["times"] = [
+        value.strip() for value in schedule_times_raw.split(",") if value.strip()
+    ] or ["08:00", "17:00"]
+    config["scheduler"]["extra_times"] = [
+        value.strip() for value in schedule_extra_raw.split(",") if value.strip()
+    ]
+    config["scheduler"]["run_on_start"] = request.form.get("run_on_start") == "on"
+
+    config["paths"]["background_video"] = request.form.get(
+        "background_video", config["paths"]["background_video"]
+    )
+
+    config["audio"]["voice"] = request.form.get("audio_voice", config["audio"]["voice"])
+    config["video"]["whisper_model"] = request.form.get(
+        "whisper_model", config["video"]["whisper_model"]
+    )
+
+    config["scrapers"]["selection_pool"] = [
+        value.strip() for value in selection_pool_raw.split(",") if value.strip()
+    ]
+    config["scrapers"]["reddit"]["subreddits"] = [
+        value.strip() for value in reddit_subreddits_raw.split(",") if value.strip()
+    ]
+    config["scrapers"]["ai"]["model"] = request.form.get(
+        "openrouter_model", config["scrapers"]["ai"]["model"]
+    )
+
+    config["uploader"]["platform"] = request.form.get(
+        "uploader_platform", config["uploader"].get("platform", "random")
+    )
+    config["uploader"]["headless"] = request.form.get("uploader_headless") == "on"
+    config["uploader"]["base_tags"] = [
+        value.strip() for value in uploader_tags_raw.split(",") if value.strip()
+    ]
+
+    save_config(config)
+    return redirect(url_for("settings_page"))
+
+
+@app.get("/videos/<path:filename>")
+def video_file(filename: str):
+    config = get_config()
+    output_dir = config.get("paths", {}).get("output_dir", "output")
+    return send_from_directory(output_dir, filename)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)

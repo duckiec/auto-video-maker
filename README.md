@@ -1,21 +1,25 @@
 # Auto Video Maker
 
-A chaotic, vibe-coded content farm that runs 24/7 in a container and does this loop on autopilot:
+Chaotic, vibe-coded content farm with a web dashboard.
 
-1. grabs source text (Reddit, Wikipedia, or AI story)
-2. converts it to voiceover
-3. slices gameplay footage to match narration length
-4. burns in viral word-group subtitles (1-3 words)
-5. uploads to YouTube Shorts or TikTok with a headless browser session
+It can run 24/7 in Docker and do the whole loop automatically:
 
-It is reckless in spirit, but engineered to fail safely and keep running.
+1. pull source text from Reddit, Wikipedia, or OpenRouter
+2. generate narration with Edge TTS
+3. cut gameplay footage to match narration duration
+4. burn in word-group subtitles from Whisper timestamps
+5. upload to YouTube Shorts or TikTok via saved Playwright sessions
+6. log every successful upload into SQLite so duplicates are skipped
 
-## Current Project Structure
+## Project Structure
 
 - assets/
 - cookies/
 - output/
+- templates/
 - src/
+- config.json
+- history.db
 - requirements.txt
 - Dockerfile
 - docker-compose.yml
@@ -23,22 +27,23 @@ It is reckless in spirit, but engineered to fail safely and keep running.
 
 Inside src/:
 
+- config_store.py
+- db.py
 - scrapers.py
 - audio.py
 - video.py
 - uploader.py
 - bot.py
+- app.py
 
 ## Prerequisites
 
-Local prerequisites:
-
 - Docker Desktop with Compose v2
-- A background gameplay file at assets/gameplay.mp4
-- API keys for the sources you want enabled
-- Saved Playwright storage-state cookie files for upload accounts
+- API keys in .env (OpenRouter, optional Reddit)
+- Saved Playwright storage-state files for accounts
+- A gameplay background video at assets/gameplay.mp4
 
-If running outside Docker, also install:
+If you run outside Docker, also install:
 
 - Python 3.10+
 - ffmpeg
@@ -46,61 +51,66 @@ If running outside Docker, also install:
 
 ## Folder Setup
 
-1. Make sure these folders exist in the project root:
-   - assets
-   - output
-   - cookies
-2. Drop your background video at:
-   - assets/gameplay.mp4
-3. Add Playwright storage state files:
-   - cookies/youtube_state.json
-   - cookies/tiktok_state.json
+1. Ensure folders exist:
+  - assets
+  - output
+  - cookies
+2. Drop your background clip at:
+  - assets/gameplay.mp4
+3. Add cookie storage-state files:
+  - cookies/youtube_state.json
+  - cookies/tiktok_state.json
 
-## Environment Variables
+## Configuration
 
-Create a .env file in the project root.
+Primary runtime config now lives in config.json.
 
-Required by source type:
+Edit settings in one of two ways:
 
-- Reddit scraper:
-  - REDDIT_CLIENT_ID
-  - REDDIT_CLIENT_SECRET
-  - optional: REDDIT_USER_AGENT
-- AI story scraper (OpenRouter):
-  - OPENROUTER_API_KEY
-  - optional: OPENROUTER_MODEL
-- Upload/browser behavior:
-  - UPLOAD_PLATFORM=random|youtube|tiktok
-  - PLAYWRIGHT_HEADLESS=true|false
-- Pipeline defaults:
-  - EDGE_TTS_VOICE=en-US-ChristopherNeural
-  - WHISPER_MODEL=base
-  - BACKGROUND_VIDEO_PATH=assets/gameplay.mp4
-  - OUTPUT_DIR=output
-  - COOKIES_DIR=cookies
-- Runtime behavior:
-  - RUN_ON_START=false
-  - EXTRA_SCHEDULE_TIMES=12:30,21:15
-  - LOG_LEVEL=INFO
-  - SCHEDULER_RECOVERY_SLEEP_SECONDS=5
+1. Dashboard settings page at /settings
+2. Manual JSON edit in config.json
 
-Example minimal .env:
+Examples of configurable values:
+
+- schedule times
+- default background video path
+- TTS voice/rate/volume
+- subreddit list
+- OpenRouter model
+- uploader platform and headless mode
+
+## Environment Variables (.env)
+
+Create .env in project root.
+
+Required keys:
+
+- OPENROUTER_API_KEY
+
+Optional keys (still supported):
+
+- REDDIT_CLIENT_ID
+- REDDIT_CLIENT_SECRET
+- REDDIT_USER_AGENT
+- OPENROUTER_MODEL
+- WIKI_USER_AGENT
+
+Minimal .env example:
 
 OPENROUTER_API_KEY=your_openrouter_key_here
 REDDIT_CLIENT_ID=your_reddit_client_id
 REDDIT_CLIENT_SECRET=your_reddit_client_secret
-UPLOAD_PLATFORM=random
-PLAYWRIGHT_HEADLESS=true
-RUN_ON_START=true
 
-## How To Run In Docker
-
-Build and start:
+## Run With Docker
 
 1. docker compose build
 2. docker compose up -d
 
-Check logs:
+Dashboard URL:
+
+- http://localhost:5000
+
+Logs:
 
 1. docker compose logs -f
 
@@ -108,47 +118,33 @@ Stop:
 
 1. docker compose down
 
-## Local Testing Plan (Before Server Deploy)
+## Local Testing Plan
 
-### 1) Validate your inputs
-
-1. Confirm assets/gameplay.mp4 exists.
-2. Confirm at least one upload storage-state file exists in cookies/.
-3. Confirm .env has keys for at least one scraper source.
-
-### 2) Force a single pipeline run now
-
-Run one immediate execution and exit (no scheduler wait):
+1. Run one forced pipeline execution now:
 
 python src/bot.py --run-once
 
-This is the fastest integration test of scraper -> audio -> video -> uploader.
-
-### 3) Run scheduler mode locally
+2. Start scheduler-only mode from CLI:
 
 python src/bot.py
 
-Scheduler will register 08:00 and 17:00 runs, plus any EXTRA_SCHEDULE_TIMES.
+3. Start dashboard mode (includes scheduler thread + manual button):
 
-### 4) Read runtime behavior from logs
+python src/app.py
 
-The bot emits stage logs like:
+4. Open browser:
 
-- [+] Selected source: ...
-- [+] Generating voiceover audio...
-- [-] Video generation failed, skipping upload: ...
+http://localhost:5000
 
-Failures are contained per run so the process stays alive.
+5. Click Generate Now to trigger background execution without freezing the page.
 
-## Notes On Stability
+## Notes
 
-- The uploader uses UI selectors that can break when platform UIs change.
-- If YouTube/TikTok upload fails, refresh cookies storage-state and retry.
-- Whisper first run may download model assets and take longer.
+- Duplicate prevention is done with history.db fingerprints of source text.
+- History table powers the dashboard feed and video links.
+- If uploader selectors break, refresh cookie sessions and re-test.
 
 ## Disclaimer
 
-This machine is held together by duct tape, caffeine, hope, and several confident AI guesses.
-If it ships 30 shorts overnight, it is genius.
-If it catches fire, that was always part of the experiment.
-# auto-video-maker
+This rig is held together by duct tape, caffeine, and suspiciously confident AI.
+If it posts bangers at 3AM, that is feature-complete chaos.

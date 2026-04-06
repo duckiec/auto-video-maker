@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Factory Settings</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100">
+    <main class="mx-auto max-w-4xl px-4 py-8">
+      <header class="mb-8 flex items-center justify-between gap-3">
+        <div>
+          <h1 class="text-3xl font-black tracking-tight">Settings Console</h1>
+          <p class="text-sm text-slate-400">Edit config.json without touching code</p>
+        </div>
+        <a href="/" class="rounded bg-slate-800 px-4 py-2 text-sm font-semibold hover:bg-slate-700">Back</a>
+      </header>
+
+      <form class="space-y-6" method="post" action="/settings">
+        <section class="rounded border border-slate-800 bg-slate-900 p-4">
+          <h2 class="mb-3 font-semibold">Scheduler</h2>
+          <label class="mb-2 block text-sm">Primary times (comma-separated HH:MM)</label>
+          <input class="w-full rounded bg-slate-800 p-2" name="scheduler_times" value="{{ config.scheduler.times | join(',') }}" />
+
+          <label class="mb-2 mt-4 block text-sm">Extra times (comma-separated HH:MM)</label>
+          <input class="w-full rounded bg-slate-800 p-2" name="scheduler_extra_times" value="{{ config.scheduler.extra_times | join(',') }}" />
+
+          <label class="mt-4 inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" name="run_on_start" {% if config.scheduler.run_on_start %}checked{% endif %} />
+            Run once on app start
+          </label>
+        </section>
+
+        <section class="rounded border border-slate-800 bg-slate-900 p-4">
+          <h2 class="mb-3 font-semibold">Content + AI</h2>
+          <label class="mb-2 block text-sm">Scraper pool (comma-separated: reddit,wiki,ai)</label>
+          <input class="w-full rounded bg-slate-800 p-2" name="selection_pool" value="{{ config.scrapers.selection_pool | join(',') }}" />
+
+          <label class="mb-2 mt-4 block text-sm">Reddit subreddits (comma-separated)</label>
+          <input class="w-full rounded bg-slate-800 p-2" name="reddit_subreddits" value="{{ config.scrapers.reddit.subreddits | join(',') }}" />
+
+          <label class="mb-2 mt-4 block text-sm">OpenRouter model</label>
+          <input class="w-full rounded bg-slate-800 p-2" name="openrouter_model" value="{{ config.scrapers.ai.model }}" />
+        </section>
+
+        <section class="rounded border border-slate-800 bg-slate-900 p-4">
+          <h2 class="mb-3 font-semibold">Media</h2>
+          <label class="mb-2 block text-sm">Background video path</label>
+          <input class="w-full rounded bg-slate-800 p-2" name="background_video" value="{{ config.paths.background_video }}" />
+
+          <label class="mb-2 mt-4 block text-sm">TTS voice</label>
+          <input class="w-full rounded bg-slate-800 p-2" name="audio_voice" value="{{ config.audio.voice }}" />
+
+          <label class="mb-2 mt-4 block text-sm">Whisper model</label>
+          <input class="w-full rounded bg-slate-800 p-2" name="whisper_model" value="{{ config.video.whisper_model }}" />
+        </section>
+
+        <section class="rounded border border-slate-800 bg-slate-900 p-4">
+          <h2 class="mb-3 font-semibold">Uploader</h2>
+          <label class="mb-2 block text-sm">Platform (random, youtube, tiktok)</label>
+          <input class="w-full rounded bg-slate-800 p-2" name="uploader_platform" value="{{ config.uploader.platform }}" />
+
+          <label class="mb-2 mt-4 block text-sm">Base tags (comma-separated)</label>
+          <input class="w-full rounded bg-slate-800 p-2" name="uploader_base_tags" value="{{ config.uploader.base_tags | join(',') }}" />
+
+          <label class="mt-4 inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" name="uploader_headless" {% if config.uploader.headless %}checked{% endif %} />
+            Headless Playwright
+          </label>
+        </section>
+
+        <button class="rounded bg-emerald-500 px-6 py-2 font-bold text-slate-950 hover:bg-emerald-400" type="submit">
+          Save Settings
+        </button>
+      </form>
+    </main>
+  </body>
+</html>

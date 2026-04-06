@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Video Factory Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100">
+    <main class="mx-auto max-w-6xl px-4 py-8">
+      <header class="mb-8 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-3xl font-black tracking-tight">Vibe-Coded Command Center</h1>
+          <p class="text-sm text-slate-400">Autonomous content factory telemetry panel</p>
+        </div>
+        <div class="flex gap-2">
+          <a href="/settings" class="rounded bg-slate-800 px-4 py-2 text-sm font-semibold hover:bg-slate-700">
+            Settings
+          </a>
+          <form action="/generate-now" method="post">
+            <button
+              class="rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+              {% if job_state.running %}disabled{% endif %}
+              type="submit"
+            >
+              {% if job_state.running %}Generating...{% else %}Generate Now{% endif %}
+            </button>
+          </form>
+        </div>
+      </header>
+
+      <section class="mb-8 rounded border border-slate-800 bg-slate-900 p-4">
+        <h2 class="mb-2 text-lg font-semibold">Manual Run Status</h2>
+        <p class="text-sm text-slate-300">
+          State:
+          <span class="font-semibold uppercase">{{ job_state.last_status }}</span>
+        </p>
+        <p class="mt-1 text-sm text-slate-400">{{ job_state.last_message }}</p>
+      </section>
+
+      <section class="rounded border border-slate-800 bg-slate-900 p-4">
+        <h2 class="mb-4 text-lg font-semibold">Video History</h2>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-left text-sm">
+            <thead class="border-b border-slate-700 text-slate-300">
+              <tr>
+                <th class="px-3 py-2">Date (UTC)</th>
+                <th class="px-3 py-2">Source</th>
+                <th class="px-3 py-2">Title</th>
+                <th class="px-3 py-2">File</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in history %}
+              <tr class="border-b border-slate-800">
+                <td class="px-3 py-2 text-slate-300">{{ item.created_at }}</td>
+                <td class="px-3 py-2 uppercase text-slate-300">{{ item.source }}</td>
+                <td class="px-3 py-2 text-slate-200">{{ item.title }}</td>
+                <td class="px-3 py-2">
+                  <a
+                    class="text-emerald-400 hover:text-emerald-300"
+                    href="/videos/{{ item.video_filename }}"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    {{ item.video_filename }}
+                  </a>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td class="px-3 py-6 text-slate-400" colspan="4">No videos yet. Smash Generate Now.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

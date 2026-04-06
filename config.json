@@ -1,0 +1,81 @@
+{
+  "scheduler": {
+    "times": [
+      "08:00",
+      "17:00"
+    ],
+    "extra_times": [],
+    "run_on_start": false,
+    "recovery_sleep_seconds": 5
+  },
+  "paths": {
+    "output_dir": "output",
+    "cookies_dir": "cookies",
+    "background_video": "assets/gameplay.mp4",
+    "history_db": "history.db"
+  },
+  "scrapers": {
+    "selection_pool": [
+      "reddit",
+      "wiki",
+      "ai"
+    ],
+    "reddit": {
+      "subreddits": [
+        "AskReddit",
+        "AmItheAsshole"
+      ],
+      "max_words": 200,
+      "post_limit": 50,
+      "time_filter": "day"
+    },
+    "wiki": {
+      "max_words": 120,
+      "min_words": 15
+    },
+    "ai": {
+      "target_words": 100,
+      "max_words": 140,
+      "min_words": 60,
+      "model": "deepseek/deepseek-chat-v3-0324:free"
+    }
+  },
+  "audio": {
+    "voice": "en-US-ChristopherNeural",
+    "rate": "+0%",
+    "volume": "+0%"
+  },
+  "video": {
+    "whisper_model": "base",
+    "subtitle": {
+      "min_words": 1,
+      "max_words": 3,
+      "font_size": 84,
+      "stroke_width": 6
+    },
+    "output": {
+      "width": 1080,
+      "height": 1920,
+      "fps": 30
+    }
+  },
+  "uploader": {
+    "platform": "random",
+    "headless": true,
+    "timeout_ms": 120000,
+    "youtube_state_file": "youtube_state.json",
+    "tiktok_state_file": "tiktok_state.json",
+    "base_tags": [
+      "#shorts",
+      "#story",
+      "#viral"
+    ]
+  },
+  "api": {
+    "openrouter_base_url": "https://openrouter.ai/api/v1",
+    "openrouter_referer": "https://local.video-factory",
+    "openrouter_title": "Auto Video Maker",
+    "reddit_user_agent": "video-factory/1.0 (by u/auto-video-bot)",
+    "wiki_user_agent": "video-factory/1.0 (contact: local)"
+  }
+}
