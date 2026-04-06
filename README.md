@@ -1,186 +1,353 @@
 # Auto Video Maker
 
-Chaotic, vibe-coded content farm with a web dashboard.
+Auto Video Maker is a Python app that turns short text content into vertical videos and can upload them to YouTube Shorts or TikTok.
 
-It can run 24/7 in Docker and do the whole loop automatically:
+It includes:
+- a Flask web dashboard
+- a scheduled pipeline runner
+- content sourcing (Reddit, Wikipedia, OpenRouter)
+- narration generation (Edge TTS)
+- subtitle video rendering (Whisper + MoviePy)
+- browser automation uploader (Playwright)
+- SQLite history logging to avoid duplicate posts
 
-1. pull source text from Reddit, Wikipedia, or OpenRouter
-2. generate narration with Edge TTS
-3. cut gameplay footage to match narration duration
-4. burn in word-group subtitles from Whisper timestamps
-5. upload to YouTube Shorts or TikTok via saved Playwright sessions
-6. log every successful upload into SQLite so duplicates are skipped
+---
 
-## Project Structure
+## What the app does (end-to-end)
 
-- assets/
-- cookies/
-- output/
-- templates/
-- src/
-- config.json
-- history.db
-- requirements.txt
-- Dockerfile
-- docker-compose.yml
-- README.md
+One pipeline run does this:
+1. Pick a source (`reddit`, `wiki`, or `ai`) from `config.json`.
+2. Fetch/generate narration text.
+3. Skip the run if the same normalized text was already uploaded (SHA-256 fingerprint in SQLite).
+4. Generate MP3 narration with Edge TTS.
+5. Create a 1080x1920 video from your background gameplay clip.
+6. Transcribe narration with Whisper and build center subtitles in 1–3 word chunks.
+7. Upload with Playwright using saved logged-in browser state (`cookies/*.json`).
+8. Log successful uploads to `history.db`.
 
-Inside src/:
+---
 
-- config_store.py
-- db.py
-- scrapers.py
-- audio.py
-- video.py
-- uploader.py
-- bot.py
-- app.py
+## Repository layout
 
-## Prerequisites
+- `src/app.py` — Flask dashboard (`/`, `/settings`, `/generate-now`, `/health`, `/videos/<file>`)
+- `src/bot.py` — scheduler loop + one-shot pipeline CLI
+- `src/scrapers.py` — Reddit/Wikipedia/OpenRouter content sources
+- `src/audio.py` — TTS MP3 generation
+- `src/video.py` — subtitle video rendering
+- `src/uploader.py` — YouTube/TikTok upload automation
+- `src/db.py` — SQLite schema, duplicate detection, history reads/writes
+- `src/config_store.py` — config load/merge/save logic
+- `templates/` — dashboard pages
+- `config.json` — main runtime config
+- `history.db` — upload history database
+- `assets/` — put `gameplay.mp4` here
+- `output/` — generated audio/video files
+- `cookies/` — Playwright storage state files
 
-- Docker Desktop with Compose v2
-- API keys in .env (OpenRouter, optional Reddit)
-- Saved Playwright storage-state files for accounts
-- A gameplay background video at assets/gameplay.mp4
+---
 
-If you run outside Docker, also install:
+## Requirements
 
-- Python 3.10+
+### Required for Docker usage
+- Docker + Docker Compose v2
+
+### Required for local (non-Docker) usage
+- Python 3.11 recommended
 - ffmpeg
-- imagemagick
+- ImageMagick
+- Chromium installed for Playwright
 
-## Folder Setup
+Python dependencies are in:
+- `requirements.txt` (dev/CI)
+- `requirements.docker.txt` (container build)
 
-1. Ensure folders exist:
-  - assets
-  - output
-  - cookies
-2. Drop your background clip at:
-  - assets/gameplay.mp4
-3. Add cookie storage-state files:
-  - cookies/youtube_state.json
-  - cookies/tiktok_state.json
+---
 
-## Configuration
+## Easy Quickstart (first successful run)
 
-Primary runtime config now lives in config.json.
+This path is optimized for getting the app running quickly with Docker.
 
-Edit settings in one of two ways:
+### 1) Prepare folders and files
+From repo root:
 
-1. Dashboard settings page at /settings
-2. Manual JSON edit in config.json
+- Ensure these folders exist:
+  - `assets/`
+  - `output/`
+  - `cookies/`
+- Put a background video at:
+  - `assets/gameplay.mp4`
 
-Examples of configurable values:
+### 2) Create `.env`
+Create `/home/runner/work/auto-video-maker/auto-video-maker/.env`.
 
-- schedule times
-- default background video path
-- TTS voice/rate/volume
-- subreddit list
-- OpenRouter model
-- uploader platform and headless mode
+Minimum recommended:
 
-## Environment Variables (.env)
+```env
+OPENROUTER_API_KEY=your_openrouter_key
+```
 
-Create .env in project root.
+If you want Reddit source enabled, also add:
 
-Required keys:
+```env
+REDDIT_CLIENT_ID=...
+REDDIT_CLIENT_SECRET=...
+# optional override
+REDDIT_USER_AGENT=video-factory/1.0 (by u/auto-video-bot)
+```
 
-- OPENROUTER_API_KEY
+### 3) Add Playwright account state files
+Uploader requires saved logged-in browser state files:
+- `cookies/youtube_state.json` for YouTube uploads
+- `cookies/tiktok_state.json` for TikTok uploads
 
-Optional keys (still supported):
+If either file is missing and that platform is selected, upload fails.
 
-- REDDIT_CLIENT_ID
-- REDDIT_CLIENT_SECRET
-- REDDIT_USER_AGENT
-- OPENROUTER_MODEL
-- WIKI_USER_AGENT
+### 4) Build and start
+```bash
+docker compose build
+docker compose up -d
+```
 
-Minimal .env example:
+### 5) Open dashboard
+- `http://localhost:5000`
 
-OPENROUTER_API_KEY=your_openrouter_key_here
-REDDIT_CLIENT_ID=your_reddit_client_id
-REDDIT_CLIENT_SECRET=your_reddit_client_secret
+Use:
+- **Generate Now** to trigger a manual run in a background thread
+- **Settings** to edit `config.json` from the UI
 
-## Run With Docker
+### 6) Confirm health
+- `http://localhost:5000/health` should return `{"status":"ok"}`
 
-1. docker compose build
-2. docker compose up -d
+### 7) Verify output
+After a successful run:
+- generated files appear in `output/`
+- upload record appears in dashboard history
+- files are downloadable via `/videos/<filename>`
 
-Dashboard URL:
+---
 
-- http://localhost:5000
+## Power-user guide
 
-Logs:
+## Run modes
 
-1. docker compose logs -f
-
-Stop:
-
-1. docker compose down
-
-## GitHub Actions (Auto Build + Push)
-
-CI/CD workflow lives at [.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml).
-
-What it does:
-
-1. Runs Python compile checks and test suite on pull requests and pushes.
-2. Builds the Docker image in CI.
-3. Runs an image smoke test that starts the container and verifies /health responds.
-4. On push to main, tags and pushes to GHCR automatically.
-
-Published image tags:
-
-1. ghcr.io/<owner>/<repo>:latest
-2. ghcr.io/<owner>/<repo>:sha-<commit-sha>
-
-Required repo settings:
-
-1. Keep GitHub Packages enabled for the repository.
-2. Do not remove default GITHUB_TOKEN package write permissions in workflow context.
-
-Pulling the image manually:
-
-1. docker pull ghcr.io/<owner>/<repo>:latest
-
-## Local Testing Plan
-
-1. Run one forced pipeline execution now:
-
-python src/bot.py --run-once
-
-2. Start scheduler-only mode from CLI:
-
-python src/bot.py
-
-3. Start dashboard mode (includes scheduler thread + manual button):
-
+### A) Dashboard mode (recommended for most users)
+```bash
 python src/app.py
+```
+Behavior:
+- starts Flask server on port `5000`
+- initializes DB on requests (except `/health`)
+- starts scheduler thread once (on first non-health request)
+- allows manual run via `POST /generate-now`
 
-4. Open browser:
+### B) Scheduler-only CLI mode
+```bash
+python src/bot.py
+```
+Behavior:
+- registers all configured schedule times
+- runs forever with `schedule.run_pending()`
+- optional immediate first run when `scheduler.run_on_start=true`
 
-http://localhost:5000
+### C) One-shot run
+```bash
+python src/bot.py --run-once
+```
+Behavior:
+- runs one full pipeline pass and exits
 
-5. Click Generate Now to trigger background execution without freezing the page.
+---
 
-## Image Verification Tests
+## Configuration deep dive (`config.json`)
 
-Image verification test file: [tests/test_image_smoke.py](tests/test_image_smoke.py)
+The app merges your file with defaults, so partial configs are valid.
+Invalid or malformed config is automatically reset to defaults.
 
-Run local smoke test manually (requires Docker):
+Top-level sections:
 
-1. docker build -t local/video-factory:test .
-2. Set environment variable RUN_IMAGE_TESTS=1
-3. Set environment variable IMAGE_UNDER_TEST=local/video-factory:test
-4. python -m unittest tests.test_image_smoke -v
+- `scheduler`
+  - `times`: primary daily run times (`HH:MM`)
+  - `extra_times`: additional daily run times
+  - `run_on_start`: run once when scheduler starts
+  - `recovery_sleep_seconds`: delay after scheduler loop errors
 
-## Notes
+- `paths`
+  - `output_dir`
+  - `cookies_dir`
+  - `background_video`
+  - `history_db`
 
-- Duplicate prevention is done with history.db fingerprints of source text.
-- History table powers the dashboard feed and video links.
-- If uploader selectors break, refresh cookie sessions and re-test.
+- `scrapers`
+  - `selection_pool`: subset/order source pool (`reddit`, `wiki`, `ai`)
+  - `reddit`: subreddits + limits
+  - `wiki`: min/max summary words
+  - `ai`: model and target/min/max words
+
+- `audio`
+  - `voice`, `rate`, `volume`
+
+- `video`
+  - `whisper_model`
+  - `subtitle`: `min_words`, `max_words`, `font_size`, `stroke_width`
+  - `output`: `width`, `height`, `fps`
+
+- `uploader`
+  - `platform`: `youtube`, `tiktok`, or `random`
+  - `headless`
+  - `timeout_ms`
+  - state filenames: `youtube_state_file`, `tiktok_state_file`
+  - `base_tags`
+
+- `api`
+  - OpenRouter URL/referer/title
+  - default user agents for Reddit/Wiki
+
+You can edit config in:
+- UI: `/settings`
+- file: `config.json`
+
+---
+
+## Environment variables
+
+### Common
+- `CONFIG_PATH` — custom path for config file
+
+### Content
+- `OPENROUTER_API_KEY` — required for AI source
+- `OPENROUTER_MODEL` — optional model override
+- `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` — required for Reddit source
+- `REDDIT_USER_AGENT` — optional override
+- `WIKI_USER_AGENT` — optional override
+
+### Media
+- `EDGE_TTS_VOICE` — optional voice override
+- `WHISPER_MODEL` — optional whisper model override
+
+### Runtime
+- `LOG_LEVEL` — logging level for pipeline logger
+- `RUN_ON_START` — fallback/override for immediate run behavior
+- `SCHEDULER_RECOVERY_SLEEP_SECONDS` — scheduler error backoff
+- `UPLOAD_PLATFORM` — fallback uploader platform
+- `PLAYWRIGHT_HEADLESS` — fallback uploader browser mode
+
+Notes:
+- If `config.json` provides a setting, it is usually primary.
+- Some env vars are used as fallback defaults and compatibility overrides.
+
+---
+
+## Upload automation details
+
+Uploader uses Playwright Chromium and `storage_state` auth files.
+
+Platform behavior:
+- YouTube: opens Studio, selects upload flow, sets title+tags, advances dialogs, publishes
+- TikTok: opens upload page, sets caption, publishes
+
+If selectors/UI change, automation can fail. Typical fix:
+- refresh logged-in state file(s)
+- rerun in non-headless mode for debugging (`uploader.headless=false`)
+
+---
+
+## Database and duplicate prevention
+
+`history.db` table stores:
+- `created_at`
+- `source`
+- `title`
+- `video_filename`
+- `content_fingerprint` (unique)
+- `content_text`
+
+Duplicate rule:
+- fingerprint is SHA-256 of normalized text (trim/collapse whitespace + lowercase)
+- if fingerprint already exists, the run is skipped before generation/upload
+
+SQLite connection uses WAL mode and a 5000ms busy timeout for improved reliability under concurrent access.
+
+---
+
+## Docker usage details
+
+### Start
+```bash
+docker compose build
+docker compose up -d
+```
+
+### Logs
+```bash
+docker compose logs -f
+```
+
+### Stop
+```bash
+docker compose down
+```
+
+`docker-compose.yml` mounts:
+- `./assets -> /video-factory/assets`
+- `./output -> /video-factory/output`
+- `./cookies -> /video-factory/cookies`
+- `./config.json -> /video-factory/config.json`
+- `./history.db -> /video-factory/history.db`
+
+Container entrypoint runs:
+- `python src/app.py`
+
+---
+
+## CI/CD behavior
+
+Workflow: `.github/workflows/ci-cd.yml`
+
+On PR/push:
+1. Installs Python deps
+2. Compiles all `src/*.py` modules
+3. Runs unit tests (`tests/test_*.py`)
+4. Builds Docker image
+5. Runs image smoke test (`/health`)
+
+On push to `main`:
+- pushes GHCR images:
+  - `ghcr.io/<owner>/<repo>:latest`
+  - `ghcr.io/<owner>/<repo>:sha-<commit-sha>`
+
+---
+
+## Local validation commands
+
+From repo root:
+
+```bash
+python -m py_compile src/config_store.py src/db.py src/scrapers.py src/audio.py src/video.py src/uploader.py src/bot.py src/app.py
+python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+Optional image smoke test:
+
+```bash
+docker build -t local/video-factory:test .
+RUN_IMAGE_TESTS=1 IMAGE_UNDER_TEST=local/video-factory:test python -m unittest tests.test_image_smoke -v
+```
+
+---
+
+## Troubleshooting
+
+- **Run skips immediately**: duplicate content detected in `history.db`; expected behavior.
+- **Reddit failures**: missing/invalid Reddit credentials or no qualifying posts under limits.
+- **AI failures**: missing `OPENROUTER_API_KEY` or provider/model issues.
+- **No subtitles/video failure**: Whisper/model/media dependency problem.
+- **Upload failure**: missing/expired `cookies/*_state.json`, UI selector drift, or platform timeout.
+- **Background video error**: missing `assets/gameplay.mp4` (or configured path).
+- **Dashboard reachable but no scheduled runs yet**: scheduler thread in `app.py` starts on first non-health request.
+
+---
 
 ## Disclaimer
 
-This rig is held together by duct tape, caffeine, and suspiciously confident AI.
-If it posts bangers at 3AM, that is feature-complete chaos.
+Use responsibly and comply with platform terms, copyright rules, and local regulations.
+You are responsible for the content and accounts used by this automation.
