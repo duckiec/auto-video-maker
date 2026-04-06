@@ -102,7 +102,29 @@ Uploader requires saved logged-in browser state files:
 
 If either file is missing and that platform is selected, upload fails.
 
-### 4) Build and start
+### 4) Pull and start (recommended: prebuilt GHCR image)
+```bash
+docker pull ghcr.io/duckiec/auto-video-maker:latest
+docker run -d \
+  --name video-factory \
+  --restart unless-stopped \
+  --env-file .env \
+  -p 5000:5000 \
+  -v "$(pwd)/assets:/video-factory/assets" \
+  -v "$(pwd)/output:/video-factory/output" \
+  -v "$(pwd)/cookies:/video-factory/cookies" \
+  -v "$(pwd)/config.json:/video-factory/config.json" \
+  -v "$(pwd)/history.db:/video-factory/history.db" \
+  ghcr.io/duckiec/auto-video-maker:latest
+```
+
+### 4b) Compose option (also uses GHCR prebuilt image)
+```bash
+docker compose pull
+docker compose up -d
+```
+
+### 4c) Optional: build from source instead
 ```bash
 docker compose build
 docker compose up -d
@@ -288,17 +310,43 @@ SQLite connection uses WAL mode and a 5000ms busy timeout for improved reliabili
 
 ### Start
 ```bash
-docker compose build
-docker compose up -d
+docker pull ghcr.io/duckiec/auto-video-maker:latest
+docker run -d \
+  --name video-factory \
+  --restart unless-stopped \
+  --env-file .env \
+  -p 5000:5000 \
+  -v "$(pwd)/assets:/video-factory/assets" \
+  -v "$(pwd)/output:/video-factory/output" \
+  -v "$(pwd)/cookies:/video-factory/cookies" \
+  -v "$(pwd)/config.json:/video-factory/config.json" \
+  -v "$(pwd)/history.db:/video-factory/history.db" \
+  ghcr.io/duckiec/auto-video-maker:latest
 ```
 
 ### Logs
 ```bash
-docker compose logs -f
+docker logs -f video-factory
 ```
 
 ### Stop
 ```bash
+docker rm -f video-factory
+```
+
+### Compose workflow (GHCR prebuilt image)
+```bash
+docker compose pull
+docker compose up -d
+docker compose logs -f
+docker compose down
+```
+
+### Optional: compose/source-build workflow
+```bash
+docker compose build
+docker compose up -d
+docker compose logs -f
 docker compose down
 ```
 

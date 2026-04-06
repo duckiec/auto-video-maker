@@ -21,12 +21,7 @@ from typing import Callable
 import schedule
 from dotenv import load_dotenv
 
-from audio import generate_voiceover
 from config_store import get_config
-from db import has_content_fingerprint, init_db, log_history_entry
-from scrapers import get_ai_story, get_reddit_story, get_wiki_fact
-from uploader import upload_video, upload_video_random_platform
-from video import generate_video
 
 load_dotenv()
 
@@ -54,6 +49,8 @@ def _configure_logging() -> None:
 
 
 def _choose_scraper() -> tuple[str, Callable[[], str]]:
+    from scrapers import get_ai_story, get_reddit_story, get_wiki_fact
+
     config = get_config()
     selection_pool = config.get("scrapers", {}).get("selection_pool", ["reddit", "wiki", "ai"])
 
@@ -82,6 +79,11 @@ def run_pipeline() -> PipelineResult | None:
     Returns a PipelineResult on success, or None on failure.
     Exceptions are intentionally contained so the scheduler loop keeps running.
     """
+
+    from audio import generate_voiceover
+    from db import has_content_fingerprint, init_db, log_history_entry
+    from uploader import upload_video, upload_video_random_platform
+    from video import generate_video
 
     logger = logging.getLogger("pipeline")
     config = get_config()
