@@ -199,9 +199,21 @@ def save_settings():
         "whisper_model", config["video"]["whisper_model"]
     )
 
-    config["scrapers"]["selection_pool"] = [
+    normalized_sources = [
         value.strip() for value in selected_sources if value.strip() in {"reddit", "wiki", "ai"}
-    ] or ["wiki", "ai"]
+    ]
+    if normalized_sources:
+        config["scrapers"]["selection_pool"] = normalized_sources
+    else:
+        default_sources = ["wiki", "ai"]
+        try:
+            from scrapers import has_reddit_credentials
+
+            if has_reddit_credentials():
+                default_sources.insert(0, "reddit")
+        except Exception:  # noqa: BLE001
+            pass
+        config["scrapers"]["selection_pool"] = default_sources
     config["scrapers"]["reddit"]["subreddits"] = [
         value.strip() for value in reddit_subreddits_raw.split(",") if value.strip()
     ]
