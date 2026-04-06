@@ -45,6 +45,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "output": {"width": 1080, "height": 1920, "fps": 30},
     },
     "uploader": {
+        "enabled": True,
         "platform": "random",
         "headless": True,
         "timeout_ms": 120000,

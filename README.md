@@ -29,7 +29,7 @@ One pipeline run does this:
 
 ## Repository layout
 
-- `src/app.py` — Flask dashboard (`/`, `/settings`, `/generate-now`, `/health`, `/videos/<file>`)
+- `src/app.py` — Flask dashboard (`/`, `/settings`, `/generate-now`, `/health`, `/videos/<file>`, setup helpers)
 - `src/bot.py` — scheduler loop + one-shot pipeline CLI
 - `src/scrapers.py` — Reddit/Wikipedia/OpenRouter content sources
 - `src/audio.py` — TTS MP3 generation
@@ -114,6 +114,9 @@ docker compose up -d
 Use:
 - **Generate Now** to trigger a manual run in a background thread
 - **Settings** to edit `config.json` from the UI
+- **Setup Assistant** on `/` to:
+  - prepare `assets/`, `output/`, and `cookies/` folders automatically
+  - upload the background gameplay video from the browser
 
 ### 6) Confirm health
 - `http://localhost:5000/health` should return `{"status":"ok"}`
@@ -192,6 +195,7 @@ Top-level sections:
   - `output`: `width`, `height`, `fps`
 
 - `uploader`
+  - `enabled`: when `false`, pipeline generates audio+video but skips upload
   - `platform`: `youtube`, `tiktok`, or `random`
   - `headless`
   - `timeout_ms`
@@ -205,6 +209,15 @@ Top-level sections:
 You can edit config in:
 - UI: `/settings`
 - file: `config.json`
+
+### WebUI quality-of-life additions
+- OpenRouter model picker in `/settings` (with live model list fetch + manual override input)
+- Upload mode toggle in `/settings`:
+  - enabled: generate + upload
+  - disabled: generate-only mode (no Playwright upload)
+- Setup assistant actions in `/`:
+  - one-click folder preparation
+  - background video upload from browser
 
 ---
 
@@ -239,7 +252,7 @@ Notes:
 
 ## Upload automation details
 
-Uploader uses Playwright Chromium and `storage_state` auth files.
+Uploader uses Playwright Chromium and `storage_state` auth files when uploads are enabled.
 
 Platform behavior:
 - YouTube: opens Studio, selects upload flow, sets title+tags, advances dialogs, publishes
@@ -248,6 +261,8 @@ Platform behavior:
 If selectors/UI change, automation can fail. Typical fix:
 - refresh logged-in state file(s)
 - rerun in non-headless mode for debugging (`uploader.headless=false`)
+
+If you only want local generation (no publishing), set `uploader.enabled=false` in `/settings`.
 
 ---
 

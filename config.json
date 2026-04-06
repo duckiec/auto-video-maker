@@ -60,6 +60,7 @@
     }
   },
   "uploader": {
+    "enabled": true,
     "platform": "random",
     "headless": true,
     "timeout_ms": 120000,
