@@ -26,6 +26,7 @@ JOB_STATE: dict[str, Any] = {
 JOB_LOCK = threading.Lock()
 _SCHEDULER_STARTED = False
 LOGGER = logging.getLogger(__name__)
+VALID_SELECTION_SOURCES = frozenset({"reddit", "wiki", "ai"})
 
 
 def _load_bot_functions() -> tuple[Callable[[], Any], Callable[[], None]]:
@@ -200,7 +201,7 @@ def save_settings():
     )
 
     normalized_sources = [
-        value.strip() for value in selected_sources if value.strip() in {"reddit", "wiki", "ai"}
+        value.strip() for value in selected_sources if value.strip() in VALID_SELECTION_SOURCES
     ]
     if normalized_sources:
         config["scrapers"]["selection_pool"] = normalized_sources
