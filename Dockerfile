@@ -22,10 +22,10 @@ RUN if [ -f /etc/ImageMagick-6/policy.xml ]; then \
     fi
 
 COPY requirements.txt ./requirements.txt
+COPY requirements.docker.txt ./requirements.docker.txt
 COPY build-constraints.txt ./build-constraints.txt
 RUN pip install --upgrade pip wheel && \
-    pip install --index-url https://download.pytorch.org/whl/cpu torch==2.2.2+cpu && \
-    PIP_CONSTRAINT=/video-factory/build-constraints.txt pip install -r requirements.txt
+    PIP_CONSTRAINT=/video-factory/build-constraints.txt pip install -r requirements.docker.txt
 
 # Install Playwright Chromium (system deps are managed via apt above).
 RUN playwright install chromium

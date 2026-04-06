@@ -1,0 +1,13 @@
+praw==7.8.1
+wikipedia-api==0.6.0
+openai==1.75.0
+python-dotenv==1.0.1
+requests==2.32.3
+edge-tts==6.1.12
+moviepy==1.0.3
+numpy==1.26.4
+playwright==1.52.0
+schedule==1.2.2
+Flask==3.0.3
+setuptools>=69
+wheel>=0.42

@@ -8,7 +8,6 @@ from typing import Any
 
 from flask import Flask, redirect, render_template, request, send_from_directory, url_for
 
-from bot import run_pipeline, start_scheduler_loop
 from config_store import get_config, save_config
 from db import fetch_recent_history, init_db
 
@@ -26,14 +25,26 @@ JOB_LOCK = threading.Lock()
 _SCHEDULER_STARTED = False
 
 
+def _load_bot_functions():
+    from bot import run_pipeline, start_scheduler_loop
+
+    return run_pipeline, start_scheduler_loop
+
+
 def _start_scheduler_thread_once() -> None:
     global _SCHEDULER_STARTED
     if _SCHEDULER_STARTED:
         return
 
-    thread = threading.Thread(target=start_scheduler_loop, daemon=True, name="pipeline-scheduler")
-    thread.start()
-    _SCHEDULER_STARTED = True
+    try:
+        _, start_scheduler_loop = _load_bot_functions()
+        thread = threading.Thread(target=start_scheduler_loop, daemon=True, name="pipeline-scheduler")
+        thread.start()
+        _SCHEDULER_STARTED = True
+    except Exception as error:  # noqa: BLE001
+        with JOB_LOCK:
+            JOB_STATE["last_status"] = "failed"
+            JOB_STATE["last_message"] = f"Scheduler unavailable: {error}"
 
 
 def _manual_pipeline_runner() -> None:
@@ -45,6 +56,7 @@ def _manual_pipeline_runner() -> None:
         JOB_STATE["last_message"] = "Pipeline run started..."
 
     try:
+        run_pipeline, _ = _load_bot_functions()
         result = run_pipeline()
         with JOB_LOCK:
             if result is None:
