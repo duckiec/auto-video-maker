@@ -22,7 +22,9 @@ RUN if [ -f /etc/ImageMagick-6/policy.xml ]; then \
     fi
 
 COPY requirements.txt ./requirements.txt
-RUN pip install --upgrade pip && pip install -r requirements.txt
+COPY build-constraints.txt ./build-constraints.txt
+RUN pip install --upgrade pip wheel && \
+    PIP_CONSTRAINT=/video-factory/build-constraints.txt pip install -r requirements.txt
 
 # Install Playwright Chromium + required system dependencies.
 RUN playwright install --with-deps chromium
@@ -30,9 +32,7 @@ RUN playwright install --with-deps chromium
 COPY src ./src
 COPY templates ./templates
 COPY config.json ./config.json
-COPY assets ./assets
-COPY output ./output
-COPY cookies ./cookies
+RUN mkdir -p ./assets ./output ./cookies
 
 EXPOSE 5000
 
