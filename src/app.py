@@ -6,7 +6,7 @@ import logging
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 from flask import Flask, redirect, render_template, request, send_from_directory, url_for
 
@@ -153,7 +153,7 @@ def generate_now():
 @app.get("/settings")
 def settings_page():
     config = get_config()
-    openrouter_models: list[str] = []
+    openrouter_models: List[str] = []
     openrouter_models_error = ""
     try:
         from scrapers import get_openrouter_models

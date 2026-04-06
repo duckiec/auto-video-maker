@@ -199,11 +199,11 @@ def run_pipeline() -> PipelineResult | None:
 
     try:
         created_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-        history_title = upload_result.title if upload_result is not None else _safe_trim(source_text, max_chars=90)
+        entry_title = upload_result.title if upload_result is not None else _safe_trim(source_text, max_chars=90)
         log_history_entry(
             created_at=created_at,
             source=scraper_name,
-            title=history_title,
+            title=entry_title,
             video_filename=Path(video_path).name,
             content_text=source_text,
             db_path=history_db,
