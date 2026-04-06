@@ -26,8 +26,8 @@ COPY build-constraints.txt ./build-constraints.txt
 RUN pip install --upgrade pip wheel && \
     PIP_CONSTRAINT=/video-factory/build-constraints.txt pip install -r requirements.txt
 
-# Install Playwright Chromium + required system dependencies.
-RUN playwright install --with-deps chromium
+# Install Playwright Chromium (system deps are managed via apt above).
+RUN playwright install chromium
 
 COPY src ./src
 COPY templates ./templates
