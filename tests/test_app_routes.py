@@ -20,7 +20,13 @@ if "bot" not in sys.modules:
     bot.start_scheduler_loop = lambda: None
     sys.modules["bot"] = bot
 
-app_module = importlib.import_module("app")
+try:
+    app_module = importlib.import_module("app")
+except ModuleNotFoundError as exc:
+    if exc.name == "flask":
+        app_module = None
+    else:
+        raise
 
 
 class _DummyThread:
@@ -35,6 +41,11 @@ class _DummyThread:
 
 
 class TestAppRoutes(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        if app_module is None:
+            raise unittest.SkipTest("Flask dependency is not installed in this test environment")
+
     def setUp(self) -> None:
         self.client = app_module.app.test_client()
 
