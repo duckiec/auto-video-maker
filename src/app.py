@@ -52,7 +52,7 @@ def _start_scheduler_thread_once() -> None:
         LOGGER.exception("Failed to start scheduler thread")
         with JOB_LOCK:
             JOB_STATE["last_status"] = "failed"
-            JOB_STATE["last_message"] = f"Scheduler unavailable: {error}"
+            JOB_STATE["last_message"] = f"Scheduler unavailable ({type(error).__name__}): {error!r}"
 
 
 def _manual_pipeline_runner() -> None:
@@ -79,7 +79,7 @@ def _manual_pipeline_runner() -> None:
         LOGGER.exception("Manual pipeline run crashed")
         with JOB_LOCK:
             JOB_STATE["last_status"] = "failed"
-            JOB_STATE["last_message"] = f"Manual run crashed: {error}"
+            JOB_STATE["last_message"] = f"Manual run crashed ({type(error).__name__}): {error!r}"
     finally:
         with JOB_LOCK:
             JOB_STATE["running"] = False
