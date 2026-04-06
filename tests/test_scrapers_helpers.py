@@ -71,7 +71,20 @@ class TestScrapersHelpers(unittest.TestCase):
             patch("scrapers.get_reddit_story", return_value="reddit text"),
             patch("scrapers.get_wiki_fact", return_value="wiki text"),
             patch("scrapers.get_ai_story", return_value="ai text"),
-            patch("scrapers.random.choice", return_value="wiki"),
+            patch("scrapers.random.shuffle", side_effect=lambda items: items.__setitem__(slice(None), ["wiki", "ai", "reddit"])),
+        ):
+            result = scrapers.get_random_content()
+
+        self.assertEqual(result, "wiki text")
+
+    def test_get_random_content_skips_reddit_when_credentials_missing(self) -> None:
+        with (
+            patch("scrapers.get_config", return_value={"scrapers": {"selection_pool": ["reddit", "wiki"]}}),
+            patch("scrapers.get_reddit_story", return_value="reddit text"),
+            patch("scrapers.get_wiki_fact", return_value="wiki text"),
+            patch("scrapers.get_ai_story", return_value="ai text"),
+            patch("scrapers.has_reddit_credentials", return_value=False),
+            patch("scrapers.random.shuffle", side_effect=lambda items: items.__setitem__(slice(None), ["reddit", "wiki"])),
         ):
             result = scrapers.get_random_content()
 
