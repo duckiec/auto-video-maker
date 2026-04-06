@@ -118,7 +118,13 @@ docker run -d \
   ghcr.io/duckiec/auto-video-maker:latest
 ```
 
-### 4b) Optional: build from source instead
+### 4b) Compose option (also uses GHCR prebuilt image)
+```bash
+docker compose pull
+docker compose up -d
+```
+
+### 4c) Optional: build from source instead
 ```bash
 docker compose build
 docker compose up -d
@@ -326,6 +332,14 @@ docker logs -f video-factory
 ### Stop
 ```bash
 docker rm -f video-factory
+```
+
+### Compose workflow (GHCR prebuilt image)
+```bash
+docker compose pull
+docker compose up -d
+docker compose logs -f
+docker compose down
 ```
 
 ### Optional: compose/source-build workflow
