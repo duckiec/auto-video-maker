@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -27,11 +28,14 @@ _SCHEDULER_STARTED = False
 LOGGER = logging.getLogger(__name__)
 
 
-def _load_bot_functions():
+def _load_bot_functions() -> tuple[Callable[[], Any], Callable[[], None]]:
     """Lazily import pipeline entry points so app startup stays lightweight.
 
     This defers importing heavier pipeline dependencies until they are actually
     needed (scheduler start or manual run).
+
+    Returns:
+        Tuple containing (run_pipeline, start_scheduler_loop) callables.
     """
     from bot import run_pipeline, start_scheduler_loop
 
@@ -52,7 +56,7 @@ def _start_scheduler_thread_once() -> None:
         LOGGER.exception("Failed to start scheduler thread")
         with JOB_LOCK:
             JOB_STATE["last_status"] = "failed"
-            JOB_STATE["last_message"] = f"Scheduler unavailable ({type(error).__name__}): {error!r}"
+            JOB_STATE["last_message"] = f"Scheduler unavailable ({type(error).__name__}): {error}"
 
 
 def _manual_pipeline_runner() -> None:
@@ -79,7 +83,7 @@ def _manual_pipeline_runner() -> None:
         LOGGER.exception("Manual pipeline run crashed")
         with JOB_LOCK:
             JOB_STATE["last_status"] = "failed"
-            JOB_STATE["last_message"] = f"Manual run crashed ({type(error).__name__}): {error!r}"
+            JOB_STATE["last_message"] = f"Manual run crashed ({type(error).__name__}): {error}"
     finally:
         with JOB_LOCK:
             JOB_STATE["running"] = False

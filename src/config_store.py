@@ -65,6 +65,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 def _config_path() -> Path:
     env_path = os.getenv("CONFIG_PATH")
     if env_path:
+        # Support CONFIG_PATH values like "~/app/config.json" across environments.
         return Path(env_path).expanduser()
     return Path(__file__).resolve().parent.parent / "config.json"
 
