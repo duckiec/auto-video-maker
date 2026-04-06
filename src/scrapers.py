@@ -49,6 +49,29 @@ def _truncate_to_words(text: str, max_words: int) -> str:
     return " ".join(words[:max_words])
 
 
+def _is_openrouter_model_unavailable_error(error: Exception, model_name: str) -> bool:
+    message = str(error)
+    return "No endpoints found for" in message and model_name in message
+
+
+def _pick_openrouter_fallback_model(current_model: str) -> str | None:
+    try:
+        available_models = get_openrouter_models()
+    except Exception:  # noqa: BLE001 - non-fatal fallback probe
+        return None
+
+    if not available_models:
+        return None
+
+    free_only = current_model.endswith(":free")
+    candidates = [model for model in available_models if model != current_model]
+    if free_only:
+        free_candidates = [model for model in candidates if model.endswith(":free")]
+        if free_candidates:
+            return free_candidates[0]
+    return candidates[0] if candidates else None
+
+
 def _retry(operation: Callable[[], str], attempts: int = 3, delay_seconds: float = 1.5) -> str:
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
@@ -201,36 +224,53 @@ def get_ai_story() -> str:
     ai_min_words = int(ai_config.get("min_words", 60))
     openrouter_referer = api_config.get("openrouter_referer", "https://local.video-factory")
     openrouter_title = api_config.get("openrouter_title", "Auto Video Maker")
+    selected_model = openrouter_model
+    fallback_attempted = False
 
     def _fetch() -> str:
+        nonlocal selected_model, fallback_attempted
         client = OpenAI(api_key=api_key, base_url=openrouter_base_url)
 
-        completion = client.chat.completions.create(
-            model=openrouter_model,
-            temperature=1.0,
-            max_tokens=220,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You write punchy, high-retention short-form stories for voiceover narration. "
-                        "Output only plain text."
-                    ),
+        try:
+            completion = client.chat.completions.create(
+                model=selected_model,
+                temperature=1.0,
+                max_tokens=220,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You write punchy, high-retention short-form stories for voiceover narration. "
+                            "Output only plain text."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Write a crazy historical fact as a vivid mini-story in about "
+                            f"{target_ai_words} words. Keep it clean, cinematic, and engaging from "
+                            "the first sentence."
+                        ),
+                    },
+                ],
+                extra_headers={
+                    "HTTP-Referer": openrouter_referer,
+                    "X-Title": openrouter_title,
                 },
-                {
-                    "role": "user",
-                    "content": (
-                        "Write a crazy historical fact as a vivid mini-story in about "
-                        f"{target_ai_words} words. Keep it clean, cinematic, and engaging from "
-                        "the first sentence."
-                    ),
-                },
-            ],
-            extra_headers={
-                "HTTP-Referer": openrouter_referer,
-                "X-Title": openrouter_title,
-            },
-        )
+            )
+        except Exception as error:  # noqa: BLE001 - transport/provider errors vary by SDK/version
+            if not fallback_attempted and _is_openrouter_model_unavailable_error(error, selected_model):
+                fallback_model = _pick_openrouter_fallback_model(selected_model)
+                if fallback_model:
+                    LOGGER.warning(
+                        "OpenRouter model '%s' unavailable, retrying with fallback '%s'.",
+                        selected_model,
+                        fallback_model,
+                    )
+                    selected_model = fallback_model
+                    fallback_attempted = True
+                    raise ScraperError(f"Retrying with fallback OpenRouter model: {fallback_model}") from error
+            raise
 
         text = _normalize_text(completion.choices[0].message.content or "")
         if not text:
