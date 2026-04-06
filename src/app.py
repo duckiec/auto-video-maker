@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 from typing import Any
@@ -23,9 +24,15 @@ JOB_STATE: dict[str, Any] = {
 }
 JOB_LOCK = threading.Lock()
 _SCHEDULER_STARTED = False
+LOGGER = logging.getLogger(__name__)
 
 
 def _load_bot_functions():
+    """Lazily import pipeline entry points so app startup stays lightweight.
+
+    This defers importing heavy optional pipeline dependencies until they are
+    actually needed (scheduler start or manual run).
+    """
     from bot import run_pipeline, start_scheduler_loop
 
     return run_pipeline, start_scheduler_loop
@@ -42,6 +49,7 @@ def _start_scheduler_thread_once() -> None:
         thread.start()
         _SCHEDULER_STARTED = True
     except Exception as error:  # noqa: BLE001
+        LOGGER.exception("Failed to start scheduler thread")
         with JOB_LOCK:
             JOB_STATE["last_status"] = "failed"
             JOB_STATE["last_message"] = f"Scheduler unavailable: {error}"
@@ -68,6 +76,7 @@ def _manual_pipeline_runner() -> None:
                     f"Uploaded {Path(result.video_path).name} via {result.platform} from {result.source}."
                 )
     except Exception as error:  # noqa: BLE001
+        LOGGER.exception("Manual pipeline run crashed")
         with JOB_LOCK:
             JOB_STATE["last_status"] = "failed"
             JOB_STATE["last_message"] = f"Manual run crashed: {error}"
