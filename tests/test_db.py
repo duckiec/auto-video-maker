@@ -6,7 +6,8 @@ from pathlib import Path
 
 import sys
 
-sys.path.insert(0, "/home/runner/work/auto-video-maker/auto-video-maker/src")
+SRC_PATH = str(Path(__file__).resolve().parents[1] / "src")
+sys.path.insert(0, SRC_PATH)
 
 import db
 
