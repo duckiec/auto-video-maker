@@ -85,10 +85,12 @@ class TestScrapersHelpers(unittest.TestCase):
             patch("scrapers.get_ai_story", return_value="ai text"),
             patch("scrapers.has_reddit_credentials", return_value=False),
             patch("scrapers.random.shuffle", side_effect=lambda items: items.__setitem__(slice(None), ["reddit", "wiki"])),
+            patch("scrapers.LOGGER.warning") as warning_mock,
         ):
             result = scrapers.get_random_content()
 
         self.assertEqual(result, "wiki text")
+        warning_mock.assert_called_once_with("Missing Reddit credentials, falling back to next source...")
 
 
 if __name__ == "__main__":

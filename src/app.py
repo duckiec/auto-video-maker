@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -154,14 +153,13 @@ def generate_now():
 @app.get("/settings")
 def settings_page():
     config = get_config()
-    reddit_credentials_loaded = bool(
-        os.getenv("REDDIT_CLIENT_ID") and os.getenv("REDDIT_CLIENT_SECRET")
-    )
+    reddit_credentials_loaded = False
     openrouter_models: List[str] = []
     openrouter_models_error = ""
     try:
-        from scrapers import get_openrouter_models
+        from scrapers import get_openrouter_models, has_reddit_credentials
 
+        reddit_credentials_loaded = has_reddit_credentials()
         openrouter_models = get_openrouter_models()
     except Exception as error:  # noqa: BLE001
         openrouter_models_error = str(error)
