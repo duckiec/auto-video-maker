@@ -66,10 +66,18 @@ def _manual_pipeline_runner() -> None:
 
 @app.before_request
 def _ensure_scheduler_and_db() -> None:
+    if request.path == "/health":
+        return
+
     config = get_config()
     db_path = config.get("paths", {}).get("history_db", "history.db")
     init_db(db_path)
     _start_scheduler_thread_once()
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}, 200
 
 
 @app.get("/")

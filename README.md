@@ -118,6 +118,31 @@ Stop:
 
 1. docker compose down
 
+## GitHub Actions (Auto Build + Push)
+
+CI/CD workflow lives at [.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml).
+
+What it does:
+
+1. Runs Python compile checks and test suite on pull requests and pushes.
+2. Builds the Docker image in CI.
+3. Runs an image smoke test that starts the container and verifies /health responds.
+4. On push to main, tags and pushes to GHCR automatically.
+
+Published image tags:
+
+1. ghcr.io/<owner>/<repo>:latest
+2. ghcr.io/<owner>/<repo>:sha-<commit-sha>
+
+Required repo settings:
+
+1. Keep GitHub Packages enabled for the repository.
+2. Do not remove default GITHUB_TOKEN package write permissions in workflow context.
+
+Pulling the image manually:
+
+1. docker pull ghcr.io/<owner>/<repo>:latest
+
 ## Local Testing Plan
 
 1. Run one forced pipeline execution now:
@@ -137,6 +162,17 @@ python src/app.py
 http://localhost:5000
 
 5. Click Generate Now to trigger background execution without freezing the page.
+
+## Image Verification Tests
+
+Image verification test file: [tests/test_image_smoke.py](tests/test_image_smoke.py)
+
+Run local smoke test manually (requires Docker):
+
+1. docker build -t local/video-factory:test .
+2. Set environment variable RUN_IMAGE_TESTS=1
+3. Set environment variable IMAGE_UNDER_TEST=local/video-factory:test
+4. python -m unittest tests.test_image_smoke -v
 
 ## Notes
 
