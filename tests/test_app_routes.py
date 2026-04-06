@@ -124,6 +124,17 @@ class TestAppRoutes(unittest.TestCase):
         self.assertEqual(saved["uploader"]["platform"], "youtube")
         self.assertEqual(saved["uploader"]["base_tags"], ["#a", "#b"])
 
+    def test_video_file_rejects_path_traversal(self) -> None:
+        config = {"paths": {"history_db": "history.db", "output_dir": "output"}}
+        with (
+            patch("app.get_config", return_value=config),
+            patch("app.init_db"),
+            patch("app._start_scheduler_thread_once"),
+        ):
+            response = self.client.get("/videos/../../etc/passwd")
+
+        self.assertEqual(response.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -182,8 +182,11 @@ def save_settings():
 @app.get("/videos/<path:filename>")
 def video_file(filename: str):
     config = get_config()
-    output_dir = config.get("paths", {}).get("output_dir", "output")
-    return send_from_directory(output_dir, filename)
+    output_dir = Path(config.get("paths", {}).get("output_dir", "output")).resolve()
+    requested = (output_dir / filename).resolve()
+    if output_dir not in requested.parents and requested != output_dir:
+        return {"error": "Invalid path"}, 400
+    return send_from_directory(str(output_dir), filename)
 
 
 if __name__ == "__main__":
