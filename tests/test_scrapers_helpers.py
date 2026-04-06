@@ -106,7 +106,7 @@ class TestScrapersHelpers(unittest.TestCase):
     def test_get_ai_story_falls_back_when_model_has_no_endpoints(self) -> None:
         calls = {"count": 0}
 
-        def _post(url: str, headers: dict, json: dict, timeout: int):  # noqa: ANN001
+        def _post(url: str, headers: dict, json: dict, timeout: int):
             self.assertEqual(url, "https://openrouter.ai/api/v1/chat/completions")
             self.assertEqual(timeout, 45)
             self.assertTrue(headers.get("Authorization", "").startswith("Bearer "))

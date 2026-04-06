@@ -307,17 +307,24 @@ def get_ai_story() -> str:
                     )
                 completion = response.json()
                 break
-            except Exception as error:  # noqa: BLE001 - transport/provider errors vary by SDK/version
-                if isinstance(error, ScraperError):
-                    raise
+            except Exception:  # noqa: BLE001 - transport/provider errors vary by SDK/version
                 raise
         if completion is None:
             raise ScraperError("OpenRouter request failed after fallback attempts.")
 
-        choices = completion.get("choices", []) if isinstance(completion, dict) else []
-        first_choice = choices[0] if choices else {}
-        message = first_choice.get("message", {}) if isinstance(first_choice, dict) else {}
-        text = _normalize_text(str(message.get("content", "")).strip())
+        if not isinstance(completion, dict):
+            raise ScraperError("OpenRouter returned a non-object JSON payload.")
+        choices = completion.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ScraperError("OpenRouter response is missing choices.")
+        first_choice = choices[0]
+        if not isinstance(first_choice, dict):
+            raise ScraperError("OpenRouter response has invalid choice format.")
+        message = first_choice.get("message")
+        if not isinstance(message, dict):
+            raise ScraperError("OpenRouter response is missing message payload.")
+        raw_content = message.get("content")
+        text = _normalize_text(str(raw_content or "").strip())
         if not text:
             raise ScraperError("OpenRouter returned empty content.")
 
