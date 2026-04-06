@@ -50,11 +50,13 @@ def _truncate_to_words(text: str, max_words: int) -> str:
 
 
 def _is_openrouter_model_unavailable_error(error: Exception, model_name: str) -> bool:
+    """Return True when an error indicates the specified OpenRouter model has no active endpoints."""
     message = str(error)
     return "No endpoints found for" in message and model_name in message
 
 
 def _pick_openrouter_fallback_model(current_model: str) -> str | None:
+    """Pick an alternate OpenRouter model, preferring free-tier fallbacks when current model is free."""
     try:
         available_models = get_openrouter_models()
     except Exception:  # noqa: BLE001 - non-fatal fallback probe

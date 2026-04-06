@@ -4,7 +4,6 @@ import importlib
 import sys
 from pathlib import Path
 import types
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -122,11 +121,13 @@ class TestScrapersHelpers(unittest.TestCase):
                     "Error code: 404 - {'error': {'message': 'No endpoints found for deepseek/deepseek-chat-v3-0324:free.', 'code': 404}}"
                 )
             self.assertEqual(model, "google/gemini-2.5-flash:free")
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content="word " * 80))]
+            return types.SimpleNamespace(
+                choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="word " * 80))]
             )
 
-        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+        fake_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=_create))
+        )
         config = {
             "scrapers": {
                 "ai": {
@@ -163,7 +164,9 @@ class TestScrapersHelpers(unittest.TestCase):
                 "Error code: 404 - {'error': {'message': 'No endpoints found for deepseek/deepseek-chat-v3-0324:free.', 'code': 404}}"
             )
 
-        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+        fake_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=_create))
+        )
         config = {
             "scrapers": {"ai": {"model": "deepseek/deepseek-chat-v3-0324:free"}},
             "api": {"openrouter_base_url": "https://openrouter.ai/api/v1"},
