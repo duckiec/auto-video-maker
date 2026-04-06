@@ -92,6 +92,15 @@ class TestScrapersHelpers(unittest.TestCase):
         self.assertEqual(result, "wiki text")
         warning_mock.assert_called_once_with("Missing Reddit credentials, falling back to next source...")
 
+    def test_get_random_content_raises_when_only_reddit_without_credentials(self) -> None:
+        with (
+            patch("scrapers.get_config", return_value={"scrapers": {"selection_pool": ["reddit"]}}),
+            patch("scrapers.has_reddit_credentials", return_value=False),
+            patch("scrapers.random.shuffle", side_effect=lambda items: items.__setitem__(slice(None), ["reddit"])),
+        ):
+            with self.assertRaises(scrapers.ScraperError):
+                scrapers.get_random_content()
+
 
 if __name__ == "__main__":
     unittest.main()
