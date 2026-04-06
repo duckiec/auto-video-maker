@@ -11,7 +11,7 @@
       <header class="mb-8 flex items-center justify-between gap-3">
         <div>
           <h1 class="text-3xl font-black tracking-tight">Settings Console</h1>
-          <p class="text-sm text-slate-400">Edit config.json without touching code</p>
+          <p class="text-sm text-slate-400">Configure everything from the web UI</p>
         </div>
         <a href="/" class="rounded bg-slate-800 px-4 py-2 text-sm font-semibold hover:bg-slate-700">Back</a>
       </header>
@@ -39,7 +39,20 @@
           <label class="mb-2 mt-4 block text-sm">Reddit subreddits (comma-separated)</label>
           <input class="w-full rounded bg-slate-800 p-2" name="reddit_subreddits" value="{{ config.scrapers.reddit.subreddits | join(',') }}" />
 
-          <label class="mb-2 mt-4 block text-sm">OpenRouter model</label>
+          <label class="mb-2 mt-4 block text-sm">OpenRouter model (quick select)</label>
+          <select class="w-full rounded bg-slate-800 p-2" name="openrouter_model_picker">
+            {% if config.scrapers.ai.model and config.scrapers.ai.model not in openrouter_models %}
+            <option value="{{ config.scrapers.ai.model }}" selected>{{ config.scrapers.ai.model }} (current)</option>
+            {% endif %}
+            {% for model in openrouter_models %}
+            <option value="{{ model }}" {% if model == config.scrapers.ai.model %}selected{% endif %}>{{ model }}</option>
+            {% endfor %}
+          </select>
+          {% if openrouter_models_error %}
+          <p class="mt-2 text-xs text-amber-400">Could not load model list right now: {{ openrouter_models_error }}</p>
+          {% endif %}
+
+          <label class="mb-2 mt-4 block text-sm">OpenRouter model (manual override)</label>
           <input class="w-full rounded bg-slate-800 p-2" name="openrouter_model" value="{{ config.scrapers.ai.model }}" />
         </section>
 
@@ -57,6 +70,11 @@
 
         <section class="rounded border border-slate-800 bg-slate-900 p-4">
           <h2 class="mb-3 font-semibold">Uploader</h2>
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" name="uploader_enabled" {% if config.uploader.enabled %}checked{% endif %} />
+            Enable auto upload after video generation
+          </label>
+
           <label class="mb-2 block text-sm">Platform (random, youtube, tiktok)</label>
           <input class="w-full rounded bg-slate-800 p-2" name="uploader_platform" value="{{ config.uploader.platform }}" />
 

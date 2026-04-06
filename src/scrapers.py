@@ -241,6 +241,34 @@ def get_ai_story() -> str:
     return _retry(_fetch)
 
 
+def get_openrouter_models() -> List[str]:
+    """Return available OpenRouter model identifiers sorted alphabetically."""
+
+    config = get_config()
+    api_config = config.get("api", {})
+    openrouter_base_url = str(
+        api_config.get("openrouter_base_url", "https://openrouter.ai/api/v1")
+    ).rstrip("/")
+    models_url = f"{openrouter_base_url}/models"
+
+    response = requests.get(models_url, timeout=20)
+    response.raise_for_status()
+
+    payload = response.json()
+    entries = payload.get("data", []) if isinstance(payload, dict) else []
+
+    model_ids: List[str] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        model_id = str(item.get("id", "")).strip()
+        if model_id:
+            model_ids.append(model_id)
+
+    deduped = sorted(set(model_ids), key=str.lower)
+    return deduped
+
+
 def get_random_content() -> str:
     """Pick one source function at random and return narration text."""
 

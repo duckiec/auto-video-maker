@@ -76,9 +76,14 @@ def _manual_pipeline_runner() -> None:
                 JOB_STATE["last_message"] = "Run finished with no upload (error or duplicate skip)."
             else:
                 JOB_STATE["last_status"] = "success"
-                JOB_STATE["last_message"] = (
-                    f"Uploaded {Path(result.video_path).name} via {result.platform} from {result.source}."
-                )
+                if result.platform == "none":
+                    JOB_STATE["last_message"] = (
+                        f"Generated {Path(result.video_path).name} from {result.source} (upload disabled)."
+                    )
+                else:
+                    JOB_STATE["last_message"] = (
+                        f"Uploaded {Path(result.video_path).name} via {result.platform} from {result.source}."
+                    )
     except Exception as error:  # noqa: BLE001
         LOGGER.exception("Manual pipeline run crashed")
         with JOB_LOCK:
@@ -110,11 +115,27 @@ def index():
     config = get_config()
     db_path = config.get("paths", {}).get("history_db", "history.db")
     history = fetch_recent_history(limit=100, db_path=db_path)
+    path_config = config.get("paths", {})
+    output_dir = Path(path_config.get("output_dir", "output"))
+    cookies_dir = Path(path_config.get("cookies_dir", "cookies"))
+    background_video = Path(path_config.get("background_video", "assets/gameplay.mp4"))
 
     with JOB_LOCK:
         state = dict(JOB_STATE)
 
-    return render_template("index.html", history=history, job_state=state)
+    setup_status = {
+        "output_dir_exists": output_dir.exists(),
+        "cookies_dir_exists": cookies_dir.exists(),
+        "assets_dir_exists": background_video.parent.exists(),
+        "background_video_exists": background_video.exists(),
+    }
+    return render_template(
+        "index.html",
+        history=history,
+        job_state=state,
+        config=config,
+        setup_status=setup_status,
+    )
 
 
 @app.post("/generate-now")
@@ -131,7 +152,21 @@ def generate_now():
 
 @app.get("/settings")
 def settings_page():
-    return render_template("settings.html", config=get_config())
+    config = get_config()
+    openrouter_models: list[str] = []
+    openrouter_models_error = ""
+    try:
+        from scrapers import get_openrouter_models
+
+        openrouter_models = get_openrouter_models()
+    except Exception as error:  # noqa: BLE001
+        openrouter_models_error = str(error)
+    return render_template(
+        "settings.html",
+        config=config,
+        openrouter_models=openrouter_models,
+        openrouter_models_error=openrouter_models_error,
+    )
 
 
 @app.post("/settings")
@@ -167,13 +202,17 @@ def save_settings():
     config["scrapers"]["reddit"]["subreddits"] = [
         value.strip() for value in reddit_subreddits_raw.split(",") if value.strip()
     ]
-    config["scrapers"]["ai"]["model"] = request.form.get(
-        "openrouter_model", config["scrapers"]["ai"]["model"]
-    )
+    manual_openrouter_model = request.form.get("openrouter_model", "").strip()
+    picked_openrouter_model = request.form.get("openrouter_model_picker", "").strip()
+    if manual_openrouter_model:
+        config["scrapers"]["ai"]["model"] = manual_openrouter_model
+    elif picked_openrouter_model:
+        config["scrapers"]["ai"]["model"] = picked_openrouter_model
 
     config["uploader"]["platform"] = request.form.get(
         "uploader_platform", config["uploader"].get("platform", "random")
     )
+    config["uploader"]["enabled"] = request.form.get("uploader_enabled") == "on"
     config["uploader"]["headless"] = request.form.get("uploader_headless") == "on"
     config["uploader"]["base_tags"] = [
         value.strip() for value in uploader_tags_raw.split(",") if value.strip()
@@ -181,6 +220,37 @@ def save_settings():
 
     save_config(config)
     return redirect(url_for("settings_page"))
+
+
+@app.post("/setup/prepare")
+def prepare_setup():
+    config = get_config()
+    path_config = config.get("paths", {})
+    output_dir = Path(path_config.get("output_dir", "output"))
+    cookies_dir = Path(path_config.get("cookies_dir", "cookies"))
+    background_video = Path(path_config.get("background_video", "assets/gameplay.mp4"))
+    assets_dir = background_video.parent
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cookies_dir.mkdir(parents=True, exist_ok=True)
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    return redirect(url_for("index"))
+
+
+@app.post("/setup/upload-background")
+def upload_background_asset():
+    config = get_config()
+    background_video = Path(
+        config.get("paths", {}).get("background_video", "assets/gameplay.mp4")
+    )
+    upload = request.files.get("background_video_file")
+    if upload is None or not upload.filename:
+        return redirect(url_for("index"))
+
+    background_video.parent.mkdir(parents=True, exist_ok=True)
+    upload.save(str(background_video))
+    return redirect(url_for("index"))
 
 
 @app.get("/videos/<path:filename>")

@@ -97,9 +97,11 @@ def run_pipeline() -> PipelineResult | None:
     assets_video = path_config.get("background_video", "assets/gameplay.mp4")
     cookies_dir = path_config.get("cookies_dir", "cookies")
     history_db = path_config.get("history_db", "history.db")
+    assets_dir = str(Path(assets_video).expanduser().parent)
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     Path(cookies_dir).mkdir(parents=True, exist_ok=True)
+    Path(assets_dir).mkdir(parents=True, exist_ok=True)
     init_db(history_db)
 
     try:
@@ -156,34 +158,40 @@ def run_pipeline() -> PipelineResult | None:
         logger.exception("Video generation failed: %s", error)
         return None
 
+    uploads_enabled = bool(uploader_config.get("enabled", True))
     upload_platform = str(uploader_config.get("platform", os.getenv("UPLOAD_PLATFORM", "random"))).strip().lower()
     headless_mode = bool(uploader_config.get("headless", os.getenv("PLAYWRIGHT_HEADLESS", "true").lower() == "true"))
+    upload_result = None
     try:
-        _pirate_log(f"[+] Upload stage started (platform mode: {upload_platform})")
-        if upload_platform in {"youtube", "tiktok"}:
-            upload_result = upload_video(
-                video_path=video_path,
-                source_text=source_text,
-                platform=upload_platform,
-                cookies_dir=cookies_dir,
-                headless=headless_mode,
-            )
+        if not uploads_enabled:
+            _pirate_log("[+] Upload stage skipped (uploader.enabled=false)")
+            logger.info("Upload skipped because uploader.enabled=false")
         else:
-            upload_result = upload_video_random_platform(
-                video_path=video_path,
-                source_text=source_text,
-                cookies_dir=cookies_dir,
-                headless=headless_mode,
-            )
+            _pirate_log(f"[+] Upload stage started (platform mode: {upload_platform})")
+            if upload_platform in {"youtube", "tiktok"}:
+                upload_result = upload_video(
+                    video_path=video_path,
+                    source_text=source_text,
+                    platform=upload_platform,
+                    cookies_dir=cookies_dir,
+                    headless=headless_mode,
+                )
+            else:
+                upload_result = upload_video_random_platform(
+                    video_path=video_path,
+                    source_text=source_text,
+                    cookies_dir=cookies_dir,
+                    headless=headless_mode,
+                )
 
-        _pirate_log(
-            f"[+] Upload successful on {upload_result.platform} | title: {upload_result.title}"
-        )
-        logger.info(
-            "Upload successful: platform=%s title=%s",
-            upload_result.platform,
-            upload_result.title,
-        )
+            _pirate_log(
+                f"[+] Upload successful on {upload_result.platform} | title: {upload_result.title}"
+            )
+            logger.info(
+                "Upload successful: platform=%s title=%s",
+                upload_result.platform,
+                upload_result.title,
+            )
     except Exception as error:  # noqa: BLE001
         _pirate_log(f"[-] Upload failed, will retry next schedule: {error}")
         logger.exception("Upload step failed: %s", error)
@@ -191,10 +199,11 @@ def run_pipeline() -> PipelineResult | None:
 
     try:
         created_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        history_title = upload_result.title if upload_result is not None else _safe_trim(source_text, max_chars=90)
         log_history_entry(
             created_at=created_at,
             source=scraper_name,
-            title=upload_result.title,
+            title=history_title,
             video_filename=Path(video_path).name,
             content_text=source_text,
             db_path=history_db,
@@ -210,7 +219,7 @@ def run_pipeline() -> PipelineResult | None:
         source=scraper_name,
         audio_path=audio_path,
         video_path=video_path,
-        platform=upload_result.platform,
+        platform=upload_result.platform if upload_result is not None else "none",
     )
 
 

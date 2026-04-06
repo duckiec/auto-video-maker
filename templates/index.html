@@ -38,6 +38,35 @@
         <p class="mt-1 text-sm text-slate-400">{{ job_state.last_message }}</p>
       </section>
 
+      <section class="mb-8 rounded border border-slate-800 bg-slate-900 p-4">
+        <h2 class="mb-3 text-lg font-semibold">Setup Assistant</h2>
+        <p class="mb-3 text-sm text-slate-300">
+          Make setup easier: prepare folders, confirm assets, and control upload mode from settings.
+        </p>
+        <ul class="mb-4 space-y-1 text-sm text-slate-300">
+          <li>Output folder: {% if setup_status.output_dir_exists %}<span class="text-emerald-400">Ready</span>{% else %}<span class="text-amber-400">Missing</span>{% endif %}</li>
+          <li>Cookies folder: {% if setup_status.cookies_dir_exists %}<span class="text-emerald-400">Ready</span>{% else %}<span class="text-amber-400">Missing</span>{% endif %}</li>
+          <li>Assets folder: {% if setup_status.assets_dir_exists %}<span class="text-emerald-400">Ready</span>{% else %}<span class="text-amber-400">Missing</span>{% endif %}</li>
+          <li>Background video: {% if setup_status.background_video_exists %}<span class="text-emerald-400">Found</span>{% else %}<span class="text-amber-400">Missing ({{ config.paths.background_video }})</span>{% endif %}</li>
+        </ul>
+        <div class="flex flex-wrap gap-2">
+          <form action="/setup/prepare" method="post">
+            <button class="rounded bg-indigo-500 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-400" type="submit">
+              Prepare Folders
+            </button>
+          </form>
+          <form action="/setup/upload-background" method="post" enctype="multipart/form-data" class="flex items-center gap-2">
+            <input class="w-56 rounded bg-slate-800 p-2 text-sm" type="file" name="background_video_file" accept="video/*" />
+            <button class="rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-400" type="submit">
+              Upload Background Video
+            </button>
+          </form>
+          <a href="/settings" class="rounded bg-slate-800 px-4 py-2 text-sm font-semibold hover:bg-slate-700">
+            Open Settings
+          </a>
+        </div>
+      </section>
+
       <section class="rounded border border-slate-800 bg-slate-900 p-4">
         <h2 class="mb-4 text-lg font-semibold">Video History</h2>
         <div class="overflow-x-auto">
