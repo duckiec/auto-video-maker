@@ -10,7 +10,8 @@ from unittest.mock import patch
 import sys
 
 SRC_PATH = str(Path(__file__).resolve().parents[1] / "src")
-sys.path.insert(0, SRC_PATH)
+if SRC_PATH not in sys.path:
+    sys.path.insert(0, SRC_PATH)
 
 import config_store
 
