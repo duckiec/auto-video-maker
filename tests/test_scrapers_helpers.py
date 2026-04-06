@@ -152,7 +152,7 @@ class TestScrapersHelpers(unittest.TestCase):
         self.assertEqual(calls["count"], 2)
 
     def test_get_ai_story_does_not_mask_original_error_when_fallback_lookup_fails(self) -> None:
-        def _post(url: str, headers: dict, json: dict, timeout: int):  # noqa: ANN001
+        def _post(url: str, headers: dict, json: dict, timeout: int):
             return types.SimpleNamespace(
                 status_code=404,
                 json=lambda: {"error": {"message": "No endpoints found for deepseek/deepseek-chat-v3-0324:free."}},

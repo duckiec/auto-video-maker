@@ -276,39 +276,36 @@ def get_ai_story() -> str:
                 "HTTP-Referer": openrouter_referer,
                 "X-Title": openrouter_title,
             }
-            try:
-                response = requests.post(
-                    chat_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=45,
-                )
-                if response.status_code >= 400:
-                    error_message = _extract_openrouter_error_message(response)
-                    if (
-                        response.status_code == 404
-                        and not fallback_attempted
-                        and _is_openrouter_model_unavailable_error(
-                            ScraperError(error_message), selected_model
-                        )
-                    ):
-                        fallback_model = _pick_openrouter_fallback_model(selected_model)
-                        if fallback_model:
-                            LOGGER.warning(
-                                "OpenRouter model '%s' unavailable, retrying with fallback '%s'.",
-                                selected_model,
-                                fallback_model,
-                            )
-                            selected_model = fallback_model
-                            fallback_attempted = True
-                            continue
-                    raise ScraperError(
-                        f"OpenRouter request failed ({response.status_code}): {error_message}"
+            response = requests.post(
+                chat_url,
+                headers=headers,
+                json=payload,
+                timeout=45,
+            )
+            if response.status_code >= 400:
+                error_message = _extract_openrouter_error_message(response)
+                if (
+                    response.status_code == 404
+                    and not fallback_attempted
+                    and _is_openrouter_model_unavailable_error(
+                        ScraperError(error_message), selected_model
                     )
-                completion = response.json()
-                break
-            except Exception:  # noqa: BLE001 - transport/provider errors vary by SDK/version
-                raise
+                ):
+                    fallback_model = _pick_openrouter_fallback_model(selected_model)
+                    if fallback_model:
+                        LOGGER.warning(
+                            "OpenRouter model '%s' unavailable, retrying with fallback '%s'.",
+                            selected_model,
+                            fallback_model,
+                        )
+                        selected_model = fallback_model
+                        fallback_attempted = True
+                        continue
+                raise ScraperError(
+                    f"OpenRouter request failed ({response.status_code}): {error_message}"
+                )
+            completion = response.json()
+            break
         if completion is None:
             raise ScraperError("OpenRouter request failed after fallback attempts.")
 
