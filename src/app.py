@@ -30,8 +30,8 @@ LOGGER = logging.getLogger(__name__)
 def _load_bot_functions():
     """Lazily import pipeline entry points so app startup stays lightweight.
 
-    This defers importing heavy optional pipeline dependencies until they are
-    actually needed (scheduler start or manual run).
+    This defers importing heavier pipeline dependencies until they are actually
+    needed (scheduler start or manual run).
     """
     from bot import run_pipeline, start_scheduler_loop
 
@@ -184,7 +184,9 @@ def video_file(filename: str):
     config = get_config()
     output_dir = Path(config.get("paths", {}).get("output_dir", "output")).resolve()
     requested = (output_dir / filename).resolve()
-    if output_dir not in requested.parents and requested != output_dir:
+    try:
+        requested.relative_to(output_dir)
+    except ValueError:
         return {"error": "Invalid path"}, 400
     return send_from_directory(str(output_dir), filename)
 
