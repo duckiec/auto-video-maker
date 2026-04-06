@@ -230,47 +230,48 @@ def get_ai_story() -> str:
     def _fetch() -> str:
         nonlocal selected_model, fallback_attempted
         client = OpenAI(api_key=api_key, base_url=openrouter_base_url)
-
-        try:
-            completion = client.chat.completions.create(
-                model=selected_model,
-                temperature=1.0,
-                max_tokens=220,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You write punchy, high-retention short-form stories for voiceover narration. "
-                            "Output only plain text."
-                        ),
+        while True:
+            try:
+                completion = client.chat.completions.create(
+                    model=selected_model,
+                    temperature=1.0,
+                    max_tokens=220,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You write punchy, high-retention short-form stories for voiceover narration. "
+                                "Output only plain text."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "Write a crazy historical fact as a vivid mini-story in about "
+                                f"{target_ai_words} words. Keep it clean, cinematic, and engaging from "
+                                "the first sentence."
+                            ),
+                        },
+                    ],
+                    extra_headers={
+                        "HTTP-Referer": openrouter_referer,
+                        "X-Title": openrouter_title,
                     },
-                    {
-                        "role": "user",
-                        "content": (
-                            "Write a crazy historical fact as a vivid mini-story in about "
-                            f"{target_ai_words} words. Keep it clean, cinematic, and engaging from "
-                            "the first sentence."
-                        ),
-                    },
-                ],
-                extra_headers={
-                    "HTTP-Referer": openrouter_referer,
-                    "X-Title": openrouter_title,
-                },
-            )
-        except Exception as error:  # noqa: BLE001 - transport/provider errors vary by SDK/version
-            if not fallback_attempted and _is_openrouter_model_unavailable_error(error, selected_model):
-                fallback_model = _pick_openrouter_fallback_model(selected_model)
-                if fallback_model:
-                    LOGGER.warning(
-                        "OpenRouter model '%s' unavailable, retrying with fallback '%s'.",
-                        selected_model,
-                        fallback_model,
-                    )
-                    selected_model = fallback_model
-                    fallback_attempted = True
-                    raise ScraperError(f"Retrying with fallback OpenRouter model: {fallback_model}") from error
-            raise
+                )
+                break
+            except Exception as error:  # noqa: BLE001 - transport/provider errors vary by SDK/version
+                if not fallback_attempted and _is_openrouter_model_unavailable_error(error, selected_model):
+                    fallback_model = _pick_openrouter_fallback_model(selected_model)
+                    if fallback_model:
+                        LOGGER.warning(
+                            "OpenRouter model '%s' unavailable, retrying with fallback '%s'.",
+                            selected_model,
+                            fallback_model,
+                        )
+                        selected_model = fallback_model
+                        fallback_attempted = True
+                        continue
+                raise
 
         text = _normalize_text(completion.choices[0].message.content or "")
         if not text:

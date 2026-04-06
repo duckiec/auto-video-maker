@@ -4,9 +4,9 @@ import importlib
 import sys
 from pathlib import Path
 import types
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
-from types import SimpleNamespace
 
 
 SRC_PATH = str(Path(__file__).resolve().parents[1] / "src")
