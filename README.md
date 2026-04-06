@@ -78,7 +78,7 @@ From repo root:
   - `assets/gameplay.mp4`
 
 ### 2) Create `.env`
-Create `/home/runner/work/auto-video-maker/auto-video-maker/.env`.
+Create `~/auto-video-maker/auto-video-maker/.env`.
 
 Minimum recommended:
 
