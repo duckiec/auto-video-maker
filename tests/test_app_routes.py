@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+import importlib
+import sys
+import tempfile
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+SRC_PATH = "/home/runner/work/auto-video-maker/auto-video-maker/src"
+if SRC_PATH not in sys.path:
+    sys.path.insert(0, SRC_PATH)
+
+
+if "bot" not in sys.modules:
+    bot = types.ModuleType("bot")
+    bot.run_pipeline = lambda: None
+    bot.start_scheduler_loop = lambda: None
+    sys.modules["bot"] = bot
+
+app_module = importlib.import_module("app")
+
+
+class _DummyThread:
+    def __init__(self, target=None, daemon=None, name=None):
+        self.target = target
+        self.daemon = daemon
+        self.name = name
+        self.started = False
+
+    def start(self) -> None:
+        self.started = True
+
+
+class TestAppRoutes(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = app_module.app.test_client()
+
+    def test_health_endpoint(self) -> None:
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json, {"status": "ok"})
+
+    def test_index_renders_with_history(self) -> None:
+        config = {"paths": {"history_db": "history.db"}}
+        history = [{"created_at": "now", "source": "ai", "title": "hello", "video_filename": "v.mp4"}]
+        with (
+            patch("app.get_config", return_value=config),
+            patch("app.fetch_recent_history", return_value=history),
+            patch("app.init_db"),
+            patch("app._start_scheduler_thread_once"),
+        ):
+            response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"hello", response.data)
+
+    def test_generate_now_starts_thread_when_not_running(self) -> None:
+        with (
+            patch.dict(app_module.JOB_STATE, {"running": False}, clear=False),
+            patch("app.threading.Thread", _DummyThread),
+            patch("app.get_config", return_value={"paths": {"history_db": "history.db"}}),
+            patch("app.init_db"),
+            patch("app._start_scheduler_thread_once"),
+        ):
+            response = self.client.post("/generate-now")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith("/"))
+
+    def test_save_settings_updates_and_persists_config(self) -> None:
+        base = {
+            "scheduler": {"times": ["08:00"], "extra_times": [], "run_on_start": False},
+            "paths": {"background_video": "assets/gameplay.mp4", "history_db": "history.db"},
+            "audio": {"voice": "v"},
+            "video": {"whisper_model": "base"},
+            "scrapers": {"selection_pool": ["reddit"], "reddit": {"subreddits": ["AskReddit"]}, "ai": {"model": "m"}},
+            "uploader": {"platform": "random", "headless": True, "base_tags": ["#shorts"]},
+        }
+
+        with (
+            patch("app.get_config", return_value=base),
+            patch("app.save_config") as save_mock,
+            patch("app.init_db"),
+            patch("app._start_scheduler_thread_once"),
+        ):
+            response = self.client.post(
+                "/settings",
+                data={
+                    "scheduler_times": "09:00, 18:00",
+                    "scheduler_extra_times": "12:00",
+                    "run_on_start": "on",
+                    "background_video": "assets/new.mp4",
+                    "audio_voice": "voice2",
+                    "whisper_model": "small",
+                    "selection_pool": "wiki,ai",
+                    "reddit_subreddits": "news,worldnews",
+                    "openrouter_model": "model-x",
+                    "uploader_platform": "youtube",
+                    "uploader_headless": "on",
+                    "uploader_base_tags": "#a,#b",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        saved = save_mock.call_args.args[0]
+        self.assertEqual(saved["scheduler"]["times"], ["09:00", "18:00"])
+        self.assertEqual(saved["scheduler"]["extra_times"], ["12:00"])
+        self.assertTrue(saved["scheduler"]["run_on_start"])
+        self.assertEqual(saved["paths"]["background_video"], "assets/new.mp4")
+        self.assertEqual(saved["uploader"]["platform"], "youtube")
+        self.assertEqual(saved["uploader"]["base_tags"], ["#a", "#b"])
+
+
+if __name__ == "__main__":
+    unittest.main()
