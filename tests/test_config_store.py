@@ -60,6 +60,38 @@ class TestConfigStore(unittest.TestCase):
             self.assertIn("paths", saved)
             self.assertIn("scrapers", saved)
 
+    def test_get_config_recovers_from_invalid_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            config_path.write_text("{not-valid-json", encoding="utf-8")
+
+            with patch.dict(os.environ, {"CONFIG_PATH": str(config_path)}, clear=False):
+                config = config_store.get_config()
+
+            self.assertEqual(config, config_store.DEFAULT_CONFIG)
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual(loaded, config_store.DEFAULT_CONFIG)
+
+    def test_get_config_recovers_from_non_object_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            config_path.write_text(json.dumps(["bad", "shape"]), encoding="utf-8")
+
+            with patch.dict(os.environ, {"CONFIG_PATH": str(config_path)}, clear=False):
+                config = config_store.get_config()
+
+            self.assertEqual(config, config_store.DEFAULT_CONFIG)
+
+    def test_save_config_creates_parent_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "nested" / "folder" / "config.json"
+            partial = {"uploader": {"platform": "tiktok"}}
+
+            with patch.dict(os.environ, {"CONFIG_PATH": str(config_path)}, clear=False):
+                config_store.save_config(partial)
+
+            self.assertTrue(config_path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

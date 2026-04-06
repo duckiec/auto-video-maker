@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from copy import deepcopy
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
@@ -64,8 +65,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
 def _config_path() -> Path:
     env_path = os.getenv("CONFIG_PATH")
     if env_path:
-        return Path(env_path)
+        # Support CONFIG_PATH values like "~/app/config.json" across environments.
+        return Path(env_path).expanduser()
     return Path(__file__).resolve().parent.parent / "config.json"
+
+
+def _write_config(path: Path, config: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    temp_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    temp_path.replace(path)
 
 
 def _merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -81,14 +90,23 @@ def _merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 def get_config() -> dict[str, Any]:
     path = _config_path()
     if not path.exists():
-        path.write_text(json.dumps(DEFAULT_CONFIG, indent=2), encoding="utf-8")
+        _write_config(path, DEFAULT_CONFIG)
         return deepcopy(DEFAULT_CONFIG)
 
-    loaded = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (JSONDecodeError, OSError):
+        _write_config(path, DEFAULT_CONFIG)
+        return deepcopy(DEFAULT_CONFIG)
+
+    if not isinstance(loaded, dict):
+        _write_config(path, DEFAULT_CONFIG)
+        return deepcopy(DEFAULT_CONFIG)
+
     return _merge_dict(DEFAULT_CONFIG, loaded)
 
 
 def save_config(config: dict[str, Any]) -> None:
     path = _config_path()
     merged = _merge_dict(DEFAULT_CONFIG, config)
-    path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+    _write_config(path, merged)

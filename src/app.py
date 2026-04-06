@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from flask import Flask, redirect, render_template, request, send_from_directory, url_for
 
-from bot import run_pipeline, start_scheduler_loop
 from config_store import get_config, save_config
 from db import fetch_recent_history, init_db
 
@@ -24,6 +25,21 @@ JOB_STATE: dict[str, Any] = {
 }
 JOB_LOCK = threading.Lock()
 _SCHEDULER_STARTED = False
+LOGGER = logging.getLogger(__name__)
+
+
+def _load_bot_functions() -> tuple[Callable[[], Any], Callable[[], None]]:
+    """Lazily import pipeline entry points so app startup stays lightweight.
+
+    This defers importing heavier pipeline dependencies until they are actually
+    needed (scheduler start or manual run).
+
+    Returns:
+        Tuple containing (run_pipeline, start_scheduler_loop) callables.
+    """
+    from bot import run_pipeline, start_scheduler_loop
+
+    return run_pipeline, start_scheduler_loop
 
 
 def _start_scheduler_thread_once() -> None:
@@ -31,9 +47,16 @@ def _start_scheduler_thread_once() -> None:
     if _SCHEDULER_STARTED:
         return
 
-    thread = threading.Thread(target=start_scheduler_loop, daemon=True, name="pipeline-scheduler")
-    thread.start()
-    _SCHEDULER_STARTED = True
+    try:
+        _, start_scheduler_loop = _load_bot_functions()
+        thread = threading.Thread(target=start_scheduler_loop, daemon=True, name="pipeline-scheduler")
+        thread.start()
+        _SCHEDULER_STARTED = True
+    except Exception as error:  # noqa: BLE001
+        LOGGER.exception("Failed to start scheduler thread")
+        with JOB_LOCK:
+            JOB_STATE["last_status"] = "failed"
+            JOB_STATE["last_message"] = f"Scheduler unavailable ({type(error).__name__}): {error}"
 
 
 def _manual_pipeline_runner() -> None:
@@ -45,6 +68,7 @@ def _manual_pipeline_runner() -> None:
         JOB_STATE["last_message"] = "Pipeline run started..."
 
     try:
+        run_pipeline, _ = _load_bot_functions()
         result = run_pipeline()
         with JOB_LOCK:
             if result is None:
@@ -56,9 +80,10 @@ def _manual_pipeline_runner() -> None:
                     f"Uploaded {Path(result.video_path).name} via {result.platform} from {result.source}."
                 )
     except Exception as error:  # noqa: BLE001
+        LOGGER.exception("Manual pipeline run crashed")
         with JOB_LOCK:
             JOB_STATE["last_status"] = "failed"
-            JOB_STATE["last_message"] = f"Manual run crashed: {error}"
+            JOB_STATE["last_message"] = f"Manual run crashed ({type(error).__name__}): {error}"
     finally:
         with JOB_LOCK:
             JOB_STATE["running"] = False
@@ -161,8 +186,13 @@ def save_settings():
 @app.get("/videos/<path:filename>")
 def video_file(filename: str):
     config = get_config()
-    output_dir = config.get("paths", {}).get("output_dir", "output")
-    return send_from_directory(output_dir, filename)
+    output_dir = Path(config.get("paths", {}).get("output_dir", "output")).resolve()
+    requested = (output_dir / filename).resolve()
+    try:
+        requested.relative_to(output_dir)
+    except ValueError:
+        return {"error": "Invalid path"}, 400
+    return send_from_directory(str(output_dir), filename)
 
 
 if __name__ == "__main__":

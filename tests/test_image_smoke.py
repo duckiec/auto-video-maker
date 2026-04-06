@@ -59,7 +59,7 @@ class TestContainerImageSmoke(unittest.TestCase):
                     self.assertEqual(response.status, 200)
                     self.assertIn("ok", body.lower())
                     return
-            except (urllib.error.URLError, AssertionError) as exc:
+            except (urllib.error.URLError, ConnectionResetError, TimeoutError, AssertionError) as exc:
                 last_error = exc
                 time.sleep(2)
 
