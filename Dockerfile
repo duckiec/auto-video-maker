@@ -24,7 +24,7 @@ RUN if [ -f /etc/ImageMagick-6/policy.xml ]; then \
 COPY requirements.txt ./requirements.txt
 COPY build-constraints.txt ./build-constraints.txt
 RUN pip install --upgrade pip wheel && \
-    PIP_CONSTRAINT=build-constraints.txt PIP_BUILD_CONSTRAINT=build-constraints.txt pip install -r requirements.txt
+    PIP_CONSTRAINT=/video-factory/build-constraints.txt pip install --constraint build-constraints.txt -r requirements.txt
 
 # Install Playwright Chromium + required system dependencies.
 RUN playwright install --with-deps chromium

@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip wheel
-          PIP_CONSTRAINT=build-constraints.txt PIP_BUILD_CONSTRAINT=build-constraints.txt pip install -r requirements.txt
+          PIP_CONSTRAINT="$PWD/build-constraints.txt" pip install --constraint build-constraints.txt -r requirements.txt
 
       - name: Compile source modules
         run: |
