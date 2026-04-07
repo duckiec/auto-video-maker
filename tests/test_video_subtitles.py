@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+import types
+import unittest
+
+
+SRC_PATH = str(Path(__file__).resolve().parents[1] / "src")
+if SRC_PATH not in sys.path:
+    sys.path.insert(0, SRC_PATH)
+
+TEST_CLIP_WIDTH = 1080
+TEST_FONT_SIZE = 84
+
+
+def _load_video_module() -> types.ModuleType:
+    if "whisper" not in sys.modules:
+        whisper = types.ModuleType("whisper")
+        whisper.load_model = lambda *args, **kwargs: None
+        sys.modules["whisper"] = whisper
+
+    module_name = "video_test_module"
+    spec = importlib.util.spec_from_file_location(
+        module_name,
+        str(Path(__file__).resolve().parents[1] / "src" / "video.py"),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestVideoSubtitleRendering(unittest.TestCase):
+    @unittest.skipUnless(
+        importlib.util.find_spec("moviepy") is not None and importlib.util.find_spec("numpy") is not None,
+        "moviepy and numpy are required for subtitle rendering tests",
+    )
+    def test_build_subtitle_clips_uses_image_clips_and_bounds_width(self) -> None:
+        video = _load_video_module()
+        subtitles = [
+            video.SubtitleChunk(
+                text="this is a fairly long subtitle sentence that should wrap across lines",
+                start=0.0,
+                end=1.25,
+            ),
+            video.SubtitleChunk(text="short text", start=1.25, end=2.0),
+        ]
+
+        clips = video._build_subtitle_clips(
+            subtitles=subtitles,
+            clip_width=TEST_CLIP_WIDTH,
+            font_size=TEST_FONT_SIZE,
+            stroke_width=6,
+        )
+        try:
+            expected_max_width = TEST_CLIP_WIDTH - video.SUBTITLE_SIDE_MARGIN
+            expected_min_height = TEST_FONT_SIZE + (max(video.SUBTITLE_MIN_VERTICAL_PADDING, TEST_FONT_SIZE // 4) * 2)
+            self.assertEqual(len(clips), 2)
+            self.assertAlmostEqual(clips[0].start, 0.0)
+            self.assertAlmostEqual(clips[0].end, 1.25)
+            self.assertGreater(clips[0].w, 0)
+            self.assertGreater(clips[0].h, 0)
+            self.assertLessEqual(clips[0].w, expected_max_width)
+            self.assertGreaterEqual(clips[0].h, expected_min_height)
+            self.assertEqual(clips[0].__class__.__name__, "ImageClip")
+        finally:
+            for clip in clips:
+                clip.close()
+
+
+if __name__ == "__main__":
+    unittest.main()

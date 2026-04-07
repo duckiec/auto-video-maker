@@ -16,9 +16,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import PIL.Image
 import whisper
-from moviepy.editor import AudioFileClip, CompositeVideoClip, TextClip, VideoFileClip, vfx
+from PIL import ImageDraw, ImageFont
+from moviepy.editor import AudioFileClip, CompositeVideoClip, ImageClip, VideoFileClip, vfx
 
 from config_store import get_config
 
@@ -26,6 +28,14 @@ DEFAULT_BACKGROUND_VIDEO = "assets/gameplay.mp4"
 DEFAULT_WHISPER_MODEL = "base"
 OUTPUT_WIDTH = 1080
 OUTPUT_HEIGHT = 1920
+SUBTITLE_SIDE_MARGIN = 120
+SUBTITLE_MIN_TEXT_WIDTH = 200
+SUBTITLE_MAX_LINES = 6
+SUBTITLE_MIN_PROBE_HEIGHT = 200
+SUBTITLE_MIN_LINE_HEIGHT = 1
+SUBTITLE_MIN_HORIZONTAL_PADDING = 24
+SUBTITLE_MIN_VERTICAL_PADDING = 14
+SUBTITLE_MIN_LINE_SPACING = 6
 
 # Pillow >=10 removed Image.ANTIALIAS; MoviePy 1.0.3 still references it.
 if not hasattr(PIL.Image, "ANTIALIAS") and hasattr(PIL.Image, "Resampling"):
@@ -146,22 +156,99 @@ def _build_subtitle_clips(
     clip_width: int,
     font_size: int,
     stroke_width: int,
-) -> list[TextClip]:
-    subtitle_clips: list[TextClip] = []
-    max_text_width = max(clip_width - 120, 200)
+) -> list[ImageClip]:
+    subtitle_clips: list[ImageClip] = []
+    max_text_width = max(clip_width - SUBTITLE_SIDE_MARGIN, SUBTITLE_MIN_TEXT_WIDTH)
+    max_text_height = max(font_size * SUBTITLE_MAX_LINES, SUBTITLE_MIN_PROBE_HEIGHT)
+
+    font_candidates = [
+        # Optional override for a custom TTF/OTF subtitle font file path.
+        os.getenv("SUBTITLE_FONT_PATH", ""),
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "C:\\Windows\\Fonts\\arialbd.ttf",
+    ]
+    font = None
+    for candidate in font_candidates:
+        if not candidate:
+            continue
+        try:
+            font = ImageFont.truetype(candidate, size=font_size)
+            break
+        except OSError:
+            continue
+    if font is None:
+        # Final fallback when no system/custom TTF font is available; set the SUBTITLE_FONT_PATH environment variable for better quality.
+        font = ImageFont.load_default()
 
     for item in subtitles:
-        subtitle = (
-            TextClip(
-                txt=item.text,
-                fontsize=font_size,
-                color="white",
-                stroke_color="black",
+        text = _normalize_words(item.text).upper()
+        if not text:
+            continue
+
+        probe_image = PIL.Image.new("RGBA", (max_text_width, max_text_height), (0, 0, 0, 0))
+        probe_draw = ImageDraw.Draw(probe_image)
+
+        words = text.split(" ")
+        lines: list[str] = []
+        current_line = ""
+        for word in words:
+            if not word:
+                continue
+            candidate = word if not current_line else f"{current_line} {word}"
+            candidate_bbox = probe_draw.textbbox(
+                (0, 0),
+                candidate,
+                font=font,
                 stroke_width=stroke_width,
-                method="caption",
-                size=(max_text_width, None),
-                align="center",
             )
+            candidate_width = candidate_bbox[2] - candidate_bbox[0]
+            if current_line and candidate_width > max_text_width:
+                lines.append(current_line)
+                current_line = word
+            else:
+                current_line = candidate
+        if current_line:
+            lines.append(current_line)
+        if not lines:
+            continue
+
+        line_heights: list[int] = []
+        line_widths: list[int] = []
+        for line in lines:
+            bbox = probe_draw.textbbox((0, 0), line, font=font, stroke_width=stroke_width)
+            line_widths.append(bbox[2] - bbox[0])
+            line_heights.append(max(SUBTITLE_MIN_LINE_HEIGHT, bbox[3] - bbox[1]))
+
+        horizontal_padding = max(SUBTITLE_MIN_HORIZONTAL_PADDING, font_size // 2)
+        vertical_padding = max(SUBTITLE_MIN_VERTICAL_PADDING, font_size // 4)
+        line_spacing = max(SUBTITLE_MIN_LINE_SPACING, font_size // 6)
+        subtitle_width = min(max_text_width, max(line_widths) + (horizontal_padding * 2))
+        subtitle_height = sum(line_heights) + (line_spacing * (len(lines) - 1)) + (vertical_padding * 2)
+        # Guard against tiny rendered text boxes for unusual font metric edge cases.
+        subtitle_height = max(subtitle_height, font_size + (vertical_padding * 2))
+
+        subtitle_image = PIL.Image.new("RGBA", (subtitle_width, subtitle_height), (0, 0, 0, 0))
+        subtitle_draw = ImageDraw.Draw(subtitle_image)
+
+        y_offset = vertical_padding
+        for line, line_height in zip(lines, line_heights):
+            bbox = subtitle_draw.textbbox((0, 0), line, font=font, stroke_width=stroke_width)
+            line_width = bbox[2] - bbox[0]
+            x_pos = (subtitle_width - line_width) // 2
+            subtitle_draw.text(
+                (x_pos, y_offset),
+                line,
+                font=font,
+                fill="white",
+                stroke_fill="black",
+                stroke_width=stroke_width,
+            )
+            y_offset += line_height + line_spacing
+
+        subtitle = (
+            ImageClip(np.array(subtitle_image))
             .set_position(("center", "center"))
             .set_start(item.start)
             .set_end(item.end)
@@ -218,7 +305,7 @@ def generate_video(
     base_clip: VideoFileClip | None = None
     audio_clip: AudioFileClip | None = None
     final_clip: CompositeVideoClip | None = None
-    subtitle_clips: list[TextClip] = []
+    subtitle_clips: list[ImageClip] = []
 
     try:
         audio_clip = AudioFileClip(str(audio_file))
