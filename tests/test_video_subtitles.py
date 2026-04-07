@@ -85,11 +85,11 @@ class TestVideoSubtitleRendering(unittest.TestCase):
                 self.start_value = None
                 self.duration_value = None
 
-            def set_start(self, value: float):
+            def set_start(self, value: float) -> "_FakeAudioClip":
                 self.start_value = value
                 return self
 
-            def set_duration(self, value: float):
+            def set_duration(self, value: float) -> "_FakeAudioClip":
                 self.duration_value = value
                 return self
 
@@ -114,11 +114,11 @@ class TestVideoSubtitleRendering(unittest.TestCase):
                 self.write_kwargs = {}
                 created["final"] = self
 
-            def set_duration(self, value: float):
+            def set_duration(self, value: float) -> "_FakeFinalClip":
                 self.duration_value = value
                 return self
 
-            def set_audio(self, clip: object):
+            def set_audio(self, clip: object) -> "_FakeFinalClip":
                 self.audio_value = clip
                 return self
 
