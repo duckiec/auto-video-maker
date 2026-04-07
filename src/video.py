@@ -29,6 +29,7 @@ DEFAULT_WHISPER_MODEL = "base"
 OUTPUT_WIDTH = 1080
 OUTPUT_HEIGHT = 1920
 SUBTITLE_SIDE_MARGIN = 120
+SUBTITLE_MIN_TEXT_WIDTH = 200
 SUBTITLE_MAX_LINES = 6
 SUBTITLE_MIN_PROBE_HEIGHT = 200
 SUBTITLE_MIN_LINE_HEIGHT = 1
@@ -157,7 +158,7 @@ def _build_subtitle_clips(
     stroke_width: int,
 ) -> list[ImageClip]:
     subtitle_clips: list[ImageClip] = []
-    max_text_width = max(clip_width - SUBTITLE_SIDE_MARGIN, 200)
+    max_text_width = max(clip_width - SUBTITLE_SIDE_MARGIN, SUBTITLE_MIN_TEXT_WIDTH)
     max_text_height = max(font_size * SUBTITLE_MAX_LINES, SUBTITLE_MIN_PROBE_HEIGHT)
 
     font_candidates = [
@@ -178,7 +179,7 @@ def _build_subtitle_clips(
         except OSError:
             continue
     if font is None:
-        # Final fallback when no system/custom TTF font is available; set SUBTITLE_FONT_PATH for better quality.
+        # Final fallback when no system/custom TTF font is available; set the SUBTITLE_FONT_PATH environment variable for better quality.
         font = ImageFont.load_default()
 
     for item in subtitles:
