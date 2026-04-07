@@ -27,18 +27,13 @@ def _install_scraper_import_stubs() -> None:
     if "requests" not in sys.modules:
         requests = types.ModuleType("requests")
         requests.Session = object
+        requests.post = lambda *args, **kwargs: None
         sys.modules["requests"] = requests
 
     if "wikipediaapi" not in sys.modules:
         wikipediaapi = types.ModuleType("wikipediaapi")
         wikipediaapi.Wikipedia = object
         sys.modules["wikipediaapi"] = wikipediaapi
-
-    if "openai" not in sys.modules:
-        openai = types.ModuleType("openai")
-        openai.OpenAI = object
-        sys.modules["openai"] = openai
-
 
 _install_scraper_import_stubs()
 scrapers = importlib.import_module("scrapers")
@@ -107,6 +102,77 @@ class TestScrapersHelpers(unittest.TestCase):
         ):
             with self.assertRaises(scrapers.ScraperError):
                 scrapers.get_random_content()
+
+    def test_get_ai_story_falls_back_when_model_has_no_endpoints(self) -> None:
+        calls = {"count": 0}
+
+        def _post(url: str, headers: dict, json: dict, timeout: int):
+            self.assertEqual(url, "https://openrouter.ai/api/v1/chat/completions")
+            self.assertEqual(timeout, 45)
+            self.assertTrue(headers.get("Authorization", "").startswith("Bearer "))
+            calls["count"] += 1
+            if calls["count"] == 1:
+                self.assertEqual(json["model"], "deepseek/deepseek-chat-v3-0324:free")
+                return types.SimpleNamespace(
+                    status_code=404,
+                    json=lambda: {"error": {"message": "No endpoints found for deepseek/deepseek-chat-v3-0324:free."}},
+                    text="",
+                )
+            self.assertEqual(json["model"], "google/gemini-2.5-flash:free")
+            return types.SimpleNamespace(
+                status_code=200,
+                json=lambda: {"choices": [{"message": {"content": "word " * 80}}]},
+                text="",
+            )
+        config = {
+            "scrapers": {
+                "ai": {
+                    "target_words": 100,
+                    "max_words": 140,
+                    "min_words": 60,
+                    "model": "deepseek/deepseek-chat-v3-0324:free",
+                }
+            },
+            "api": {
+                "openrouter_base_url": "https://openrouter.ai/api/v1",
+                "openrouter_referer": "https://local.video-factory",
+                "openrouter_title": "Auto Video Maker",
+            },
+        }
+
+        with (
+            patch("scrapers.get_config", return_value=config),
+            patch("scrapers.os.getenv", side_effect=lambda key, default=None: "k" if key == "OPENROUTER_API_KEY" else default),
+            patch("scrapers.requests.post", side_effect=_post),
+            patch("scrapers.get_openrouter_models", return_value=["deepseek/deepseek-chat-v3-0324:free", "google/gemini-2.5-flash:free"]),
+        ):
+            result = scrapers.get_ai_story()
+
+        self.assertGreaterEqual(len(result.split()), 60)
+        self.assertEqual(calls["count"], 2)
+
+    def test_get_ai_story_does_not_mask_original_error_when_fallback_lookup_fails(self) -> None:
+        def _post(url: str, headers: dict, json: dict, timeout: int):
+            return types.SimpleNamespace(
+                status_code=404,
+                json=lambda: {"error": {"message": "No endpoints found for deepseek/deepseek-chat-v3-0324:free."}},
+                text="",
+            )
+        config = {
+            "scrapers": {"ai": {"model": "deepseek/deepseek-chat-v3-0324:free"}},
+            "api": {"openrouter_base_url": "https://openrouter.ai/api/v1"},
+        }
+
+        with (
+            patch("scrapers.get_config", return_value=config),
+            patch("scrapers.os.getenv", side_effect=lambda key, default=None: "k" if key == "OPENROUTER_API_KEY" else default),
+            patch("scrapers.requests.post", side_effect=_post),
+            patch("scrapers.get_openrouter_models", side_effect=RuntimeError("models unavailable")),
+        ):
+            with self.assertRaises(scrapers.ScraperError) as ctx:
+                scrapers.get_ai_story()
+
+        self.assertIn("No endpoints found for deepseek/deepseek-chat-v3-0324:free", str(ctx.exception))
 
 
 if __name__ == "__main__":
