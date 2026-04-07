@@ -11,6 +11,8 @@ SRC_PATH = str(Path(__file__).resolve().parents[1] / "src")
 if SRC_PATH not in sys.path:
     sys.path.insert(0, SRC_PATH)
 
+WRAPPED_SUBTITLE_MIN_HEIGHT = 120
+
 
 def _load_video_module() -> types.ModuleType:
     if "whisper" not in sys.modules:
@@ -60,7 +62,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             self.assertGreater(clips[0].w, 0)
             self.assertGreater(clips[0].h, 0)
             self.assertLessEqual(clips[0].w, expected_max_width)
-            self.assertGreater(clips[0].h, 120)
+            self.assertGreater(clips[0].h, WRAPPED_SUBTITLE_MIN_HEIGHT)
             self.assertEqual(clips[0].__class__.__name__, "ImageClip")
         finally:
             for clip in clips:

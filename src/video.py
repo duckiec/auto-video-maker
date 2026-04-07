@@ -31,6 +31,7 @@ OUTPUT_HEIGHT = 1920
 SUBTITLE_SIDE_MARGIN = 120
 SUBTITLE_MAX_LINES = 6
 SUBTITLE_MIN_PROBE_HEIGHT = 200
+SUBTITLE_MIN_LINE_HEIGHT = 1
 SUBTITLE_MIN_HORIZONTAL_PADDING = 24
 SUBTITLE_MIN_VERTICAL_PADDING = 14
 SUBTITLE_MIN_LINE_SPACING = 6
@@ -177,6 +178,7 @@ def _build_subtitle_clips(
         except OSError:
             continue
     if font is None:
+        # Final fallback when no system/custom TTF font is available; set SUBTITLE_FONT_PATH for better quality.
         font = ImageFont.load_default()
 
     for item in subtitles:
@@ -216,7 +218,7 @@ def _build_subtitle_clips(
         for line in lines:
             bbox = probe_draw.textbbox((0, 0), line, font=font, stroke_width=stroke_width)
             line_widths.append(bbox[2] - bbox[0])
-            line_heights.append(max(1, bbox[3] - bbox[1]))
+            line_heights.append(max(SUBTITLE_MIN_LINE_HEIGHT, bbox[3] - bbox[1]))
 
         horizontal_padding = max(SUBTITLE_MIN_HORIZONTAL_PADDING, font_size // 2)
         vertical_padding = max(SUBTITLE_MIN_VERTICAL_PADDING, font_size // 4)
