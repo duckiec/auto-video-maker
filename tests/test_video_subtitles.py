@@ -18,7 +18,7 @@ def _load_video_module() -> types.ModuleType:
         whisper.load_model = lambda *args, **kwargs: None
         sys.modules["whisper"] = whisper
 
-    module_name = "video_module_for_testing"
+    module_name = "video_test_module"
     spec = importlib.util.spec_from_file_location(
         module_name,
         str(Path(__file__).resolve().parents[1] / "src" / "video.py"),
@@ -53,12 +53,13 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             stroke_width=6,
         )
         try:
+            expected_max_width = 1080 - video.SUBTITLE_SIDE_MARGIN
             self.assertEqual(len(clips), 2)
             self.assertAlmostEqual(clips[0].start, 0.0)
             self.assertAlmostEqual(clips[0].end, 1.25)
             self.assertGreater(clips[0].w, 0)
             self.assertGreater(clips[0].h, 0)
-            self.assertLessEqual(clips[0].w, 960)
+            self.assertLessEqual(clips[0].w, expected_max_width)
             self.assertGreater(clips[0].h, 120)
             self.assertEqual(clips[0].__class__.__name__, "ImageClip")
         finally:

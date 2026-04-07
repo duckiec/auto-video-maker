@@ -28,6 +28,7 @@ DEFAULT_BACKGROUND_VIDEO = "assets/gameplay.mp4"
 DEFAULT_WHISPER_MODEL = "base"
 OUTPUT_WIDTH = 1080
 OUTPUT_HEIGHT = 1920
+SUBTITLE_SIDE_MARGIN = 120
 SUBTITLE_MAX_LINES = 6
 SUBTITLE_MIN_PROBE_HEIGHT = 200
 SUBTITLE_MIN_HORIZONTAL_PADDING = 24
@@ -155,7 +156,7 @@ def _build_subtitle_clips(
     stroke_width: int,
 ) -> list[ImageClip]:
     subtitle_clips: list[ImageClip] = []
-    max_text_width = max(clip_width - 120, 200)
+    max_text_width = max(clip_width - SUBTITLE_SIDE_MARGIN, 200)
     max_text_height = max(font_size * SUBTITLE_MAX_LINES, SUBTITLE_MIN_PROBE_HEIGHT)
 
     font_candidates = [
