@@ -231,20 +231,20 @@ def _build_subtitle_clips(
         subtitle_image = PIL.Image.new("RGBA", (subtitle_width, subtitle_height), (0, 0, 0, 0))
         subtitle_draw = ImageDraw.Draw(subtitle_image)
 
-        y_cursor = vertical_padding
+        y_offset = vertical_padding
         for line, line_height in zip(lines, line_heights):
             bbox = subtitle_draw.textbbox((0, 0), line, font=font, stroke_width=stroke_width)
             line_width = bbox[2] - bbox[0]
             x_pos = (subtitle_width - line_width) // 2
             subtitle_draw.text(
-                (x_pos, y_cursor),
+                (x_pos, y_offset),
                 line,
                 font=font,
                 fill="white",
                 stroke_fill="black",
                 stroke_width=stroke_width,
             )
-            y_cursor += line_height + line_spacing
+            y_offset += line_height + line_spacing
 
         subtitle = (
             ImageClip(np.array(subtitle_image))

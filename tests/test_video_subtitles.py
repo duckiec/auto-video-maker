@@ -12,6 +12,7 @@ if SRC_PATH not in sys.path:
     sys.path.insert(0, SRC_PATH)
 
 WRAPPED_SUBTITLE_MIN_HEIGHT = 120
+TEST_CLIP_WIDTH = 1080
 
 
 def _load_video_module() -> types.ModuleType:
@@ -50,12 +51,12 @@ class TestVideoSubtitleRendering(unittest.TestCase):
 
         clips = video._build_subtitle_clips(
             subtitles=subtitles,
-            clip_width=1080,
+            clip_width=TEST_CLIP_WIDTH,
             font_size=84,
             stroke_width=6,
         )
         try:
-            expected_max_width = 1080 - video.SUBTITLE_SIDE_MARGIN
+            expected_max_width = TEST_CLIP_WIDTH - video.SUBTITLE_SIDE_MARGIN
             self.assertEqual(len(clips), 2)
             self.assertAlmostEqual(clips[0].start, 0.0)
             self.assertAlmostEqual(clips[0].end, 1.25)
