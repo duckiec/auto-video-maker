@@ -303,7 +303,7 @@ def _write_with_audio_failsafe(
                 remove_temp=True,
             )
         except Exception as error:  # noqa: BLE001
-            logger.warning("Video render attempt %s/%s failed: %s", attempt, max_attempts, error)
+            logger.warning("Video render attempt %s/%s failed: %s", attempt, max_attempts, str(error))
             last_error = error
             continue
 
@@ -325,7 +325,9 @@ def _write_with_audio_failsafe(
         except Exception:  # noqa: BLE001
             pass
 
-    raise VideoGenerationError(f"Video rendering failed after {max_attempts} attempts: {last_error}")
+    raise VideoGenerationError(
+        f"Video rendering failed after {max_attempts} attempts: {str(last_error)}"
+    )
 
 
 def generate_video(
