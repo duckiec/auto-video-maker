@@ -28,6 +28,11 @@ DEFAULT_BACKGROUND_VIDEO = "assets/gameplay.mp4"
 DEFAULT_WHISPER_MODEL = "base"
 OUTPUT_WIDTH = 1080
 OUTPUT_HEIGHT = 1920
+SUBTITLE_MAX_LINES = 6
+SUBTITLE_MIN_PROBE_HEIGHT = 200
+SUBTITLE_MIN_HORIZONTAL_PADDING = 24
+SUBTITLE_MIN_VERTICAL_PADDING = 14
+SUBTITLE_MIN_LINE_SPACING = 6
 
 # Pillow >=10 removed Image.ANTIALIAS; MoviePy 1.0.3 still references it.
 if not hasattr(PIL.Image, "ANTIALIAS") and hasattr(PIL.Image, "Resampling"):
@@ -151,7 +156,7 @@ def _build_subtitle_clips(
 ) -> list[ImageClip]:
     subtitle_clips: list[ImageClip] = []
     max_text_width = max(clip_width - 120, 200)
-    max_text_height = max(font_size * 6, 200)
+    max_text_height = max(font_size * SUBTITLE_MAX_LINES, SUBTITLE_MIN_PROBE_HEIGHT)
 
     font_candidates = [
         os.getenv("SUBTITLE_FONT_PATH", ""),
@@ -211,9 +216,9 @@ def _build_subtitle_clips(
             line_widths.append(bbox[2] - bbox[0])
             line_heights.append(max(1, bbox[3] - bbox[1]))
 
-        horizontal_padding = max(24, font_size // 2)
-        vertical_padding = max(14, font_size // 4)
-        line_spacing = max(6, font_size // 6)
+        horizontal_padding = max(SUBTITLE_MIN_HORIZONTAL_PADDING, font_size // 2)
+        vertical_padding = max(SUBTITLE_MIN_VERTICAL_PADDING, font_size // 4)
+        line_spacing = max(SUBTITLE_MIN_LINE_SPACING, font_size // 6)
         subtitle_width = min(max_text_width, max(line_widths) + (horizontal_padding * 2))
         subtitle_height = sum(line_heights) + (line_spacing * (len(lines) - 1)) + (vertical_padding * 2)
         subtitle_height = max(subtitle_height, font_size + (vertical_padding * 2))
