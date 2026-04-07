@@ -18,7 +18,7 @@ def _load_video_module() -> types.ModuleType:
         whisper.load_model = lambda *args, **kwargs: None
         sys.modules["whisper"] = whisper
 
-    module_name = "video_real_for_tests"
+    module_name = "video_module_for_testing"
     spec = importlib.util.spec_from_file_location(
         module_name,
         str(Path(__file__).resolve().parents[1] / "src" / "video.py"),

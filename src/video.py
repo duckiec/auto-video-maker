@@ -159,6 +159,7 @@ def _build_subtitle_clips(
     max_text_height = max(font_size * SUBTITLE_MAX_LINES, SUBTITLE_MIN_PROBE_HEIGHT)
 
     font_candidates = [
+        # Optional override for a custom TTF/OTF subtitle font file path.
         os.getenv("SUBTITLE_FONT_PATH", ""),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
@@ -221,6 +222,7 @@ def _build_subtitle_clips(
         line_spacing = max(SUBTITLE_MIN_LINE_SPACING, font_size // 6)
         subtitle_width = min(max_text_width, max(line_widths) + (horizontal_padding * 2))
         subtitle_height = sum(line_heights) + (line_spacing * (len(lines) - 1)) + (vertical_padding * 2)
+        # Guard against tiny rendered text boxes for unusual font metric edge cases.
         subtitle_height = max(subtitle_height, font_size + (vertical_padding * 2))
 
         subtitle_image = PIL.Image.new("RGBA", (subtitle_width, subtitle_height), (0, 0, 0, 0))
