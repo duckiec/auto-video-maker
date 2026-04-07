@@ -270,7 +270,8 @@ def _rendered_video_has_audio(video_path: Path) -> bool:
             return False
         audio_duration = getattr(probe_audio, "duration", None)
         return bool(audio_duration and float(audio_duration) > 0)
-    except Exception:  # noqa: BLE001
+    except Exception as error:  # noqa: BLE001
+        logger.debug("Failed to probe rendered video audio: %s: %s", type(error).__name__, str(error))
         return False
     finally:
         if probe_audio is not None:
@@ -303,7 +304,13 @@ def _write_with_audio_failsafe(
                 remove_temp=True,
             )
         except Exception as error:  # noqa: BLE001
-            logger.warning("Video render attempt %s/%s failed: %s", attempt, max_attempts, str(error))
+            logger.warning(
+                "Video render attempt %s/%s failed (%s): %s",
+                attempt,
+                max_attempts,
+                type(error).__name__,
+                str(error),
+            )
             last_error = error
             continue
 

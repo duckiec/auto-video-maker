@@ -106,7 +106,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             def close(self) -> None:
                 return None
 
-        created: dict[str, object] = {}
+        created_clips: dict[str, object] = {}
 
         class _FakeFinalClip:
             def __init__(self, clips: list[object]) -> None:
@@ -114,7 +114,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
                 self.duration_value = None
                 self.audio_value = None
                 self.write_calls: list[dict[str, object]] = []
-                created["final"] = self
+                created_clips["final"] = self
 
             def set_duration(self, value: float) -> "_FakeFinalClip":
                 self.duration_value = value
@@ -145,7 +145,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
 
             def _fake_audio_factory(path: str):
                 clip = _FakeAudioClip(path)
-                created["audio"] = clip
+                created_clips["audio"] = clip
                 return clip
 
             video.AudioFileClip = _fake_audio_factory
@@ -168,8 +168,8 @@ class TestVideoSubtitleRendering(unittest.TestCase):
                 whisper_model_name="base",
             )
 
-            audio_clip = created["audio"]
-            final_clip = created["final"]
+            audio_clip = created_clips["audio"]
+            final_clip = created_clips["final"]
             self.assertEqual(audio_clip.start_value, 0)
             self.assertEqual(audio_clip.start_calls, 1)
             self.assertAlmostEqual(audio_clip.duration_value, EXPECTED_AUDIO_DURATION)
