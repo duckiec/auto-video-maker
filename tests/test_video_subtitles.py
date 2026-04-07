@@ -14,6 +14,7 @@ if SRC_PATH not in sys.path:
 
 TEST_CLIP_WIDTH = 1080
 TEST_FONT_SIZE = 84
+EXPECTED_AUDIO_DURATION = 2.75
 
 
 def _load_video_module() -> types.ModuleType:
@@ -80,7 +81,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
 
         class _FakeAudioClip:
             def __init__(self, _: str) -> None:
-                self.duration = 2.75
+                self.duration = EXPECTED_AUDIO_DURATION
                 self.start_value = None
                 self.duration_value = None
 
@@ -167,8 +168,8 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             audio_clip = created["audio"]
             final_clip = created["final"]
             self.assertEqual(audio_clip.start_value, 0)
-            self.assertAlmostEqual(audio_clip.duration_value, 2.75)
-            self.assertAlmostEqual(final_clip.duration_value, 2.75)
+            self.assertAlmostEqual(audio_clip.duration_value, EXPECTED_AUDIO_DURATION)
+            self.assertAlmostEqual(final_clip.duration_value, EXPECTED_AUDIO_DURATION)
             self.assertIs(final_clip.audio_value, audio_clip)
             self.assertEqual(
                 final_clip.write_kwargs.get("temp_audiofile"),
