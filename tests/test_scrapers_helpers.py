@@ -174,6 +174,49 @@ class TestScrapersHelpers(unittest.TestCase):
 
         self.assertIn("No endpoints found for deepseek/deepseek-chat-v3-0324:free", str(ctx.exception))
 
+    def test_get_ai_story_includes_dramatic_prompt_and_selected_pov(self) -> None:
+        captured_payload = {}
+
+        def _post(url: str, headers: dict, json: dict, timeout: int):
+            captured_payload["payload"] = json
+            return types.SimpleNamespace(
+                status_code=200,
+                json=lambda: {"choices": [{"message": {"content": "word " * 90}}]},
+                text="",
+            )
+
+        config = {
+            "scrapers": {
+                "ai": {
+                    "target_words": 110,
+                    "max_words": 140,
+                    "min_words": 60,
+                    "model": "deepseek/deepseek-chat-v3-0324:free",
+                }
+            },
+            "api": {"openrouter_base_url": "https://openrouter.ai/api/v1"},
+        }
+
+        pov = "a second-person warning (example tone: 'If your husband does this, run...')"
+        with (
+            patch("scrapers.get_config", return_value=config),
+            patch(
+                "scrapers.os.getenv",
+                side_effect=lambda key, default=None: "k" if key == "OPENROUTER_API_KEY" else default,
+            ),
+            patch("scrapers.random.choice", return_value=pov),
+            patch("scrapers.requests.post", side_effect=_post),
+        ):
+            result = scrapers.get_ai_story()
+
+        self.assertGreaterEqual(len(result.split()), 60)
+        user_prompt = captured_payload["payload"]["messages"][1]["content"]
+        self.assertIn("Write a short, gripping narrative story", user_prompt)
+        self.assertIn("high-drama, relatable themes", user_prompt)
+        self.assertIn("strong hook in the first sentence", user_prompt)
+        self.assertIn("unresolved ending", user_prompt)
+        self.assertIn(f"Write from {pov}", user_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

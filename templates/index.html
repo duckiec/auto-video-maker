@@ -19,6 +19,7 @@
           </a>
           <form action="/generate-now" method="post">
             <button
+              id="generate-now-button"
               class="rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
               {% if job_state.running %}disabled{% endif %}
               type="submit"
@@ -33,9 +34,40 @@
         <h2 class="mb-2 text-lg font-semibold">Manual Run Status</h2>
         <p class="text-sm text-slate-300">
           State:
-          <span class="font-semibold uppercase">{{ job_state.last_status }}</span>
+          <span id="job-state" class="font-semibold uppercase">{{ job_state.last_status }}</span>
         </p>
-        <p class="mt-1 text-sm text-slate-400">{{ job_state.last_message }}</p>
+        <p class="mt-1 text-sm text-slate-300">
+          Stage:
+          <span id="job-stage" class="font-semibold uppercase">{{ job_state.stage }}</span>
+        </p>
+        <div class="mt-3">
+          <div class="mb-1 flex items-center justify-between text-xs text-slate-400">
+            <span>Progress</span>
+            <span id="job-progress-label">{{ job_state.progress }}%</span>
+          </div>
+          <div class="h-2 w-full rounded bg-slate-800">
+            <div
+              id="job-progress-bar"
+              class="h-2 rounded bg-emerald-500 transition-all duration-500"
+              style="width: {{ job_state.progress }}%;"
+            ></div>
+          </div>
+        </div>
+        <p id="job-message" class="mt-3 text-sm text-slate-400">{{ job_state.last_message }}</p>
+        <p
+          id="job-download-wrap"
+          class="mt-2 text-sm {% if not job_state.last_video_filename %}hidden{% endif %}"
+        >
+          <a
+            id="job-download-link"
+            class="text-emerald-400 hover:text-emerald-300"
+            href="{% if job_state.last_video_filename %}/videos/{{ job_state.last_video_filename }}{% else %}#{% endif %}"
+            target="_blank"
+            rel="noopener"
+          >
+            {% if job_state.last_video_filename %}Download latest video: {{ job_state.last_video_filename }}{% endif %}
+          </a>
+        </p>
       </section>
 
       <section class="mb-8 rounded border border-slate-800 bg-slate-900 p-4">
@@ -106,5 +138,70 @@
         </div>
       </section>
     </main>
+    <script>
+      const stateEl = document.getElementById("job-state");
+      const stageEl = document.getElementById("job-stage");
+      const messageEl = document.getElementById("job-message");
+      const progressBarEl = document.getElementById("job-progress-bar");
+      const progressLabelEl = document.getElementById("job-progress-label");
+      const downloadWrapEl = document.getElementById("job-download-wrap");
+      const downloadLinkEl = document.getElementById("job-download-link");
+      const generateBtnEl = document.getElementById("generate-now-button");
+
+      const stageLabels = {
+        idle: "IDLE",
+        fetching_script: "FETCHING SCRIPT",
+        generating_audio: "GENERATING AUDIO",
+        rendering_video: "RENDERING VIDEO",
+        uploading: "UPLOADING",
+        complete: "COMPLETE",
+        error: "ERROR",
+      };
+
+      function updateStatus(state) {
+        const running = !!state.running;
+        const statusText = String(state.last_status || "idle").toUpperCase();
+        const stageKey = String(state.stage || "idle");
+        const stageText = stageLabels[stageKey] || stageKey.split("_").join(" ").toUpperCase();
+        const message = String(state.last_message || "");
+        const progress = Math.max(0, Math.min(100, Number(state.progress || 0)));
+        const filename = state.last_video_filename ? String(state.last_video_filename) : "";
+
+        stateEl.textContent = statusText;
+        stageEl.textContent = stageText;
+        messageEl.textContent = message;
+        progressBarEl.style.width = `${progress}%`;
+        progressLabelEl.textContent = `${Math.round(progress)}%`;
+
+        if (generateBtnEl) {
+          generateBtnEl.disabled = running;
+          generateBtnEl.textContent = running ? "Generating..." : "Generate Now";
+        }
+
+        if (running || !filename) {
+          downloadWrapEl.classList.add("hidden");
+          downloadLinkEl.textContent = "";
+          downloadLinkEl.href = "#";
+        } else {
+          downloadWrapEl.classList.remove("hidden");
+          downloadLinkEl.href = `/videos/${encodeURIComponent(filename)}`;
+          downloadLinkEl.textContent = `Download latest video: ${filename}`;
+        }
+      }
+
+      async function refreshJobStatus() {
+        try {
+          const response = await fetch("/job-status", { cache: "no-store" });
+          if (!response.ok) return;
+          const state = await response.json();
+          updateStatus(state);
+        } catch (error) {
+          // Ignore transient polling failures.
+        }
+      }
+
+      refreshJobStatus();
+      setInterval(refreshJobStatus, 1500);
+    </script>
   </body>
 </html>

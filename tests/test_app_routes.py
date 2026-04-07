@@ -56,6 +56,25 @@ class TestAppRoutes(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json, {"status": "ok"})
 
+    def test_job_status_endpoint(self) -> None:
+        with patch.dict(
+            app_module.JOB_STATE,
+            {
+                "running": True,
+                "last_status": "running",
+                "stage": "generating_audio",
+                "progress": 45,
+                "last_message": "Generating voiceover audio...",
+                "last_video_filename": None,
+            },
+            clear=False,
+        ):
+            response = self.client.get("/job-status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["stage"], "generating_audio")
+        self.assertEqual(response.json["progress"], 45)
+
     def test_index_renders_with_history(self) -> None:
         config = {"paths": {"history_db": "history.db"}}
         history = [{"created_at": "now", "source": "ai", "title": "hello", "video_filename": "v.mp4"}]

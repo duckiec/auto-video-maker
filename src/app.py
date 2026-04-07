@@ -21,7 +21,10 @@ app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
 JOB_STATE: dict[str, Any] = {
     "running": False,
     "last_status": "idle",
+    "stage": "idle",
+    "progress": 0,
     "last_message": "No manual run started yet.",
+    "last_video_filename": None,
 }
 JOB_LOCK = threading.Lock()
 _SCHEDULER_STARTED = False
@@ -61,22 +64,46 @@ def _start_scheduler_thread_once() -> None:
 
 
 def _manual_pipeline_runner() -> None:
+    def _set_progress(stage: str, message: str, progress: int) -> None:
+        with JOB_LOCK:
+            JOB_STATE["stage"] = stage
+            JOB_STATE["progress"] = max(0, min(100, int(progress)))
+            JOB_STATE["last_message"] = message
+            if stage == "error":
+                JOB_STATE["last_status"] = "failed"
+            elif stage == "complete":
+                JOB_STATE["last_status"] = "success"
+            else:
+                JOB_STATE["last_status"] = "running"
+
     with JOB_LOCK:
         if JOB_STATE["running"]:
             return
         JOB_STATE["running"] = True
         JOB_STATE["last_status"] = "running"
+        JOB_STATE["stage"] = "fetching_script"
+        JOB_STATE["progress"] = 5
         JOB_STATE["last_message"] = "Pipeline run started..."
+        JOB_STATE["last_video_filename"] = None
 
     try:
         run_pipeline, _ = _load_bot_functions()
-        result = run_pipeline()
+        result = run_pipeline(progress_callback=_set_progress)
         with JOB_LOCK:
             if result is None:
                 JOB_STATE["last_status"] = "failed"
-                JOB_STATE["last_message"] = "Run finished with no upload (error or duplicate skip)."
+                if JOB_STATE.get("stage") != "error":
+                    JOB_STATE["stage"] = "error"
+                    JOB_STATE["progress"] = 100
+                    JOB_STATE["last_message"] = (
+                        "Run finished with no output (error or duplicate skip)."
+                    )
+                JOB_STATE["last_video_filename"] = None
             else:
                 JOB_STATE["last_status"] = "success"
+                JOB_STATE["stage"] = "complete"
+                JOB_STATE["progress"] = 100
+                JOB_STATE["last_video_filename"] = Path(result.video_path).name
                 if result.platform == "none":
                     JOB_STATE["last_message"] = (
                         f"Generated {Path(result.video_path).name} from {result.source} (upload disabled)."
@@ -89,7 +116,10 @@ def _manual_pipeline_runner() -> None:
         LOGGER.exception("Manual pipeline run crashed")
         with JOB_LOCK:
             JOB_STATE["last_status"] = "failed"
+            JOB_STATE["stage"] = "error"
+            JOB_STATE["progress"] = 100
             JOB_STATE["last_message"] = f"Manual run crashed ({type(error).__name__}): {error}"
+            JOB_STATE["last_video_filename"] = None
     finally:
         with JOB_LOCK:
             JOB_STATE["running"] = False
@@ -97,7 +127,7 @@ def _manual_pipeline_runner() -> None:
 
 @app.before_request
 def _ensure_scheduler_and_db() -> None:
-    if request.path == "/health":
+    if request.path in {"/health", "/job-status"}:
         return
 
     config = get_config()
@@ -109,6 +139,13 @@ def _ensure_scheduler_and_db() -> None:
 @app.get("/health")
 def health():
     return {"status": "ok"}, 200
+
+
+@app.get("/job-status")
+def job_status():
+    with JOB_LOCK:
+        state = dict(JOB_STATE)
+    return state, 200
 
 
 @app.get("/")
