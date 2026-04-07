@@ -260,7 +260,7 @@ def _build_subtitle_clips(
     return subtitle_clips
 
 
-def _rendered_video_has_audio(video_path: Path) -> bool:
+def _video_has_audio(video_path: Path) -> bool:
     probe_clip: VideoFileClip | None = None
     probe_audio = None
     try:
@@ -290,7 +290,7 @@ def _write_with_audio_failsafe(
     fps: int,
     max_attempts: int = 2,
 ) -> None:
-    last_error: Exception | None = None
+    last_error: Exception = VideoGenerationError("Unknown render failure.")
     for attempt in range(1, max_attempts + 1):
         temp_audio_path = Path(output_dir) / f"{output_path.stem}-temp-audio-{attempt}.m4a"
         try:
@@ -318,7 +318,7 @@ def _write_with_audio_failsafe(
             last_error = VideoGenerationError("Final video file was not created.")
             continue
 
-        if _rendered_video_has_audio(output_path):
+        if _video_has_audio(output_path):
             return
 
         logger.warning(
@@ -332,9 +332,7 @@ def _write_with_audio_failsafe(
         except Exception:  # noqa: BLE001
             pass
 
-    raise VideoGenerationError(
-        f"Video rendering failed after {max_attempts} attempts: {str(last_error)}"
-    )
+    raise VideoGenerationError(f"Video rendering failed after {max_attempts} attempts: {str(last_error)}")
 
 
 def generate_video(
@@ -411,9 +409,9 @@ def generate_video(
             stroke_width=subtitle_stroke_width,
         )
 
-        merged_audio = audio_clip.set_start(0).set_duration(target_duration)
+        aligned_audio = audio_clip.set_start(0).set_duration(target_duration)
         final_clip = CompositeVideoClip([base_clip, *subtitle_clips]).set_duration(target_duration).set_audio(
-            merged_audio
+            aligned_audio
         )
         _write_with_audio_failsafe(
             final_clip=final_clip,

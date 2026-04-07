@@ -155,7 +155,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             video._build_subtitle_clips = lambda *args, **kwargs: [_FakeSubtitleClip()]
             video.CompositeVideoClip = lambda clips: _FakeFinalClip(clips)
             video._build_output_path = lambda *args, **kwargs: output_file
-            video._rendered_video_has_audio = lambda *_args, **_kwargs: True
+            video._video_has_audio = lambda *_args, **_kwargs: True
             video.get_config = lambda: {
                 "video": {"subtitle": {}, "output": {}},
                 "paths": {"output_dir": str(tmp_path), "background_video": str(background_file)},
@@ -248,7 +248,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             video._build_subtitle_clips = lambda *args, **kwargs: [_FakeSubtitleClip()]
             video.CompositeVideoClip = lambda _clips: final_clip
             video._build_output_path = lambda *args, **kwargs: output_file
-            video._rendered_video_has_audio = lambda *_args, **_kwargs: next(has_audio_checks)
+            video._video_has_audio = lambda *_args, **_kwargs: next(has_audio_checks)
             video.get_config = lambda: {
                 "video": {"subtitle": {}, "output": {}},
                 "paths": {"output_dir": str(tmp_path), "background_video": str(background_file)},
