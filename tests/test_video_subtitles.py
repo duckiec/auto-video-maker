@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 import types
 import unittest
+import importlib
 
 
 SRC_PATH = str(Path(__file__).resolve().parents[1] / "src")
@@ -31,6 +32,10 @@ def _load_video_module() -> types.ModuleType:
 
 
 class TestVideoSubtitleRendering(unittest.TestCase):
+    @unittest.skipUnless(
+        importlib.util.find_spec("moviepy") is not None and importlib.util.find_spec("numpy") is not None,
+        "moviepy and numpy are required for subtitle rendering tests",
+    )
     def test_build_subtitle_clips_uses_image_clips_and_bounds_width(self) -> None:
         video = _load_video_module()
         subtitles = [
