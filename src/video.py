@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import random
 import re
+import logging
 import warnings
 from dataclasses import dataclass
 from datetime import datetime
@@ -36,6 +37,7 @@ SUBTITLE_MIN_LINE_HEIGHT = 1
 SUBTITLE_MIN_HORIZONTAL_PADDING = 24
 SUBTITLE_MIN_VERTICAL_PADDING = 14
 SUBTITLE_MIN_LINE_SPACING = 6
+logger = logging.getLogger(__name__)
 
 # Pillow >=10 removed Image.ANTIALIAS; MoviePy 1.0.3 still references it.
 if not hasattr(PIL.Image, "ANTIALIAS") and hasattr(PIL.Image, "Resampling"):
@@ -258,6 +260,81 @@ def _build_subtitle_clips(
     return subtitle_clips
 
 
+def _video_has_audio(video_path: Path) -> bool:
+    probe_clip: VideoFileClip | None = None
+    probe_audio = None
+    try:
+        probe_clip = VideoFileClip(str(video_path))
+        probe_audio = probe_clip.audio
+        if probe_audio is None:
+            return False
+        audio_duration = getattr(probe_audio, "duration", None)
+        return bool(audio_duration and float(audio_duration) > 0)
+    except Exception as error:  # noqa: BLE001
+        logger.debug("Failed to probe rendered video audio: %s: %s", type(error).__name__, str(error))
+        return False
+    finally:
+        if probe_audio is not None:
+            try:
+                probe_audio.close()
+            except Exception:  # noqa: BLE001
+                pass
+        if probe_clip is not None:
+            probe_clip.close()
+
+
+def _write_with_audio_failsafe(
+    final_clip: CompositeVideoClip,
+    output_path: Path,
+    output_dir: str | os.PathLike[str],
+    fps: int,
+    max_attempts: int = 2,
+) -> None:
+    last_error: Exception = VideoGenerationError("Video rendering did not complete successfully.")
+    for attempt in range(1, max_attempts + 1):
+        temp_audio_path = Path(output_dir) / f"{output_path.stem}-temp-audio-{attempt}.m4a"
+        try:
+            final_clip.write_videofile(
+                str(output_path),
+                codec="libx264",
+                audio_codec="aac",
+                fps=fps,
+                threads=2,
+                temp_audiofile=str(temp_audio_path),
+                remove_temp=True,
+            )
+        except Exception as error:  # noqa: BLE001
+            logger.warning(
+                "Video render attempt %s/%s failed (%s): %s",
+                attempt,
+                max_attempts,
+                type(error).__name__,
+                str(error),
+            )
+            last_error = error
+            continue
+
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            last_error = VideoGenerationError("Final video file was not created.")
+            continue
+
+        if _video_has_audio(output_path):
+            return
+
+        logger.warning(
+            "Video render attempt %s/%s produced output without audio track; retrying.",
+            attempt,
+            max_attempts,
+        )
+        last_error = VideoGenerationError("Rendered video is missing an audio track.")
+        try:
+            output_path.unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+    raise VideoGenerationError(f"Video rendering failed after {max_attempts} attempts: {str(last_error)}")
+
+
 def generate_video(
     audio_path: str | os.PathLike[str],
     background_video_path: str | os.PathLike[str] = DEFAULT_BACKGROUND_VIDEO,
@@ -332,19 +409,16 @@ def generate_video(
             stroke_width=subtitle_stroke_width,
         )
 
-        final_clip = CompositeVideoClip([base_clip, *subtitle_clips]).set_audio(audio_clip)
-        final_clip.write_videofile(
-            str(output_path),
-            codec="libx264",
-            audio_codec="aac",
-            fps=int(base_clip.fps or output_fps),
-            threads=2,
-            temp_audiofile=str(Path(resolved_output_dir) / "temp-audio.m4a"),
-            remove_temp=True,
+        aligned_audio = audio_clip.set_start(0).set_duration(target_duration)
+        final_clip = CompositeVideoClip([base_clip, *subtitle_clips]).set_duration(target_duration).set_audio(
+            aligned_audio
         )
-
-        if not output_path.exists() or output_path.stat().st_size == 0:
-            raise VideoGenerationError("Final video file was not created.")
+        _write_with_audio_failsafe(
+            final_clip=final_clip,
+            output_path=output_path,
+            output_dir=resolved_output_dir,
+            fps=int(base_clip.fps or output_fps),
+        )
 
         return str(output_path)
     except Exception as error:  # noqa: BLE001
