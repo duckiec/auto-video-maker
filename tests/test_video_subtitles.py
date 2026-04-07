@@ -111,7 +111,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
                 self.clips = clips
                 self.duration_value = None
                 self.audio_value = None
-                self.write_kwargs = {}
+                self.write_calls: list[dict[str, object]] = []
                 created["final"] = self
 
             def set_duration(self, value: float) -> "_FakeFinalClip":
@@ -123,7 +123,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
                 return self
 
             def write_videofile(self, path: str, **kwargs) -> None:
-                self.write_kwargs = kwargs
+                self.write_calls.append(kwargs)
                 Path(path).write_bytes(b"ok")
 
             def close(self) -> None:
@@ -153,6 +153,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             video._build_subtitle_clips = lambda *args, **kwargs: [_FakeSubtitleClip()]
             video.CompositeVideoClip = lambda clips: _FakeFinalClip(clips)
             video._build_output_path = lambda *args, **kwargs: output_file
+            video._rendered_video_has_audio = lambda *_args, **_kwargs: True
             video.get_config = lambda: {
                 "video": {"subtitle": {}, "output": {}},
                 "paths": {"output_dir": str(tmp_path), "background_video": str(background_file)},
@@ -172,8 +173,99 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             self.assertAlmostEqual(final_clip.duration_value, EXPECTED_AUDIO_DURATION)
             self.assertIs(final_clip.audio_value, audio_clip)
             self.assertEqual(
-                final_clip.write_kwargs.get("temp_audiofile"),
-                str(tmp_path / "final_test-temp-audio.m4a"),
+                final_clip.write_calls[0].get("temp_audiofile"),
+                str(tmp_path / "final_test-temp-audio-1.m4a"),
+            )
+            self.assertEqual(result, str(output_file))
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("moviepy") is not None and importlib.util.find_spec("numpy") is not None,
+        "moviepy and numpy are required for video generation tests",
+    )
+    def test_generate_video_retries_when_first_render_has_no_audio(self) -> None:
+        video = _load_video_module()
+
+        class _FakeAudioClip:
+            def __init__(self, _: str) -> None:
+                self.duration = EXPECTED_AUDIO_DURATION
+
+            def set_start(self, _: float) -> "_FakeAudioClip":
+                return self
+
+            def set_duration(self, _: float) -> "_FakeAudioClip":
+                return self
+
+            def close(self) -> None:
+                return None
+
+        class _FakeBaseClip:
+            def __init__(self) -> None:
+                self.w = TEST_CLIP_WIDTH
+                self.fps = 30
+
+            def close(self) -> None:
+                return None
+
+        class _FakeFinalClip:
+            def __init__(self, _: list[object]) -> None:
+                self.write_calls: list[dict[str, object]] = []
+
+            def set_duration(self, _: float) -> "_FakeFinalClip":
+                return self
+
+            def set_audio(self, _: object) -> "_FakeFinalClip":
+                return self
+
+            def write_videofile(self, path: str, **kwargs) -> None:
+                self.write_calls.append(kwargs)
+                Path(path).write_bytes(b"ok")
+
+            def close(self) -> None:
+                return None
+
+        class _FakeSubtitleClip:
+            def close(self) -> None:
+                return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            audio_file = tmp_path / "voice.mp3"
+            background_file = tmp_path / "bg.mp4"
+            output_file = tmp_path / "final_retry.mp4"
+            audio_file.write_bytes(b"a")
+            background_file.write_bytes(b"b")
+
+            final_clip = _FakeFinalClip([])
+            has_audio_checks = iter([False, True])
+
+            video.AudioFileClip = lambda _path: _FakeAudioClip(_path)
+            video._prepare_background_clip = lambda *args, **kwargs: _FakeBaseClip()
+            video._extract_word_tokens = lambda *args, **kwargs: [video.WordToken(text="hello", start=0.0, end=0.5)]
+            video._group_words = lambda *args, **kwargs: [video.SubtitleChunk(text="HELLO", start=0.0, end=0.5)]
+            video._build_subtitle_clips = lambda *args, **kwargs: [_FakeSubtitleClip()]
+            video.CompositeVideoClip = lambda _clips: final_clip
+            video._build_output_path = lambda *args, **kwargs: output_file
+            video._rendered_video_has_audio = lambda *_args, **_kwargs: next(has_audio_checks)
+            video.get_config = lambda: {
+                "video": {"subtitle": {}, "output": {}},
+                "paths": {"output_dir": str(tmp_path), "background_video": str(background_file)},
+            }
+
+            result = video.generate_video(
+                audio_path=str(audio_file),
+                background_video_path=str(background_file),
+                output_dir=str(tmp_path),
+                whisper_model_name="base",
+            )
+
+            self.assertEqual(len(final_clip.write_calls), 2)
+            self.assertEqual(
+                final_clip.write_calls[0].get("temp_audiofile"),
+                str(tmp_path / "final_retry-temp-audio-1.m4a"),
+            )
+            self.assertEqual(
+                final_clip.write_calls[1].get("temp_audiofile"),
+                str(tmp_path / "final_retry-temp-audio-2.m4a"),
             )
             self.assertEqual(result, str(output_file))
 
