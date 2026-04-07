@@ -25,7 +25,8 @@ from config_store import get_config
 load_dotenv()
 LOGGER = logging.getLogger(__name__)
 MAX_OPENROUTER_MODEL_ATTEMPTS = 2  # initial model + one fallback model
-DRAMA_POV_OPTIONS = [
+# Point of view (POV) perspective styles used for generated narratives.
+STORY_PERSPECTIVE_OPTIONS = [
     "a first-person confession (example tone: 'I found out...')",
     "a dramatic third-person observer perspective (example tone: 'She never knew that...')",
     "a second-person warning (example tone: 'If your husband does this, run...')",
@@ -248,7 +249,7 @@ def get_ai_story() -> str:
     openrouter_title = api_config.get("openrouter_title", "Auto Video Maker")
     selected_model = openrouter_model
     fallback_attempted = False
-    selected_pov = random.choice(DRAMA_POV_OPTIONS)
+    selected_pov = random.choice(STORY_PERSPECTIVE_OPTIONS)
 
     def _fetch() -> str:
         nonlocal selected_model, fallback_attempted

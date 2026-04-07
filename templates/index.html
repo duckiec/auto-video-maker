@@ -54,6 +54,7 @@
           </div>
         </div>
         <p id="job-message" class="mt-3 text-sm text-slate-400">{{ job_state.last_message }}</p>
+        <p id="job-sync-status" class="mt-1 hidden text-xs text-amber-300"></p>
         <p
           id="job-download-wrap"
           class="mt-2 text-sm {% if not job_state.last_video_filename %}hidden{% endif %}"
@@ -147,6 +148,11 @@
       const downloadWrapEl = document.getElementById("job-download-wrap");
       const downloadLinkEl = document.getElementById("job-download-link");
       const generateBtnEl = document.getElementById("generate-now-button");
+      const syncStatusEl = document.getElementById("job-sync-status");
+      const POLL_INTERVAL_RUNNING_MS = 1500;
+      const POLL_INTERVAL_IDLE_MS = 4000;
+      const POLL_FAILURE_THRESHOLD = 2;
+      let pollFailureCount = 0;
 
       const stageLabels = {
         idle: "IDLE",
@@ -162,7 +168,7 @@
         const running = !!state.running;
         const statusText = String(state.last_status || "idle").toUpperCase();
         const stageKey = String(state.stage || "idle");
-        const stageText = stageLabels[stageKey] || stageKey.split("_").join(" ").toUpperCase();
+        const stageText = stageLabels[stageKey] || stageKey.replace(/_/g, " ").toUpperCase();
         const message = String(state.last_message || "");
         const progress = Math.max(0, Math.min(100, Number(state.progress || 0)));
         const filename = state.last_video_filename ? String(state.last_video_filename) : "";
@@ -176,6 +182,11 @@
         if (generateBtnEl) {
           generateBtnEl.disabled = running;
           generateBtnEl.textContent = running ? "Generating..." : "Generate Now";
+        }
+
+        if (syncStatusEl) {
+          syncStatusEl.classList.add("hidden");
+          syncStatusEl.textContent = "";
         }
 
         if (running || !filename) {
@@ -192,16 +203,34 @@
       async function refreshJobStatus() {
         try {
           const response = await fetch("/job-status", { cache: "no-store" });
-          if (!response.ok) return;
+          if (!response.ok) {
+            pollFailureCount += 1;
+            if (pollFailureCount >= POLL_FAILURE_THRESHOLD && syncStatusEl) {
+              syncStatusEl.classList.remove("hidden");
+              syncStatusEl.textContent = "Live status temporarily unavailable. Retrying...";
+            }
+            return;
+          }
           const state = await response.json();
+          pollFailureCount = 0;
           updateStatus(state);
         } catch (error) {
-          // Ignore transient polling failures.
+          pollFailureCount += 1;
+          if (pollFailureCount >= POLL_FAILURE_THRESHOLD && syncStatusEl) {
+            syncStatusEl.classList.remove("hidden");
+            syncStatusEl.textContent = "Live status temporarily unavailable. Retrying...";
+          }
         }
       }
 
-      refreshJobStatus();
-      setInterval(refreshJobStatus, 1500);
+      async function pollLoop() {
+        await refreshJobStatus();
+        const isRunning = generateBtnEl ? generateBtnEl.disabled : false;
+        const nextDelayMs = isRunning ? POLL_INTERVAL_RUNNING_MS : POLL_INTERVAL_IDLE_MS;
+        setTimeout(pollLoop, nextDelayMs);
+      }
+
+      pollLoop();
     </script>
   </body>
 </html>

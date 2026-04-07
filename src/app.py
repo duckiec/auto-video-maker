@@ -32,6 +32,10 @@ LOGGER = logging.getLogger(__name__)
 VALID_SELECTION_SOURCES = frozenset({"reddit", "wiki", "ai"})
 
 
+def _clamp_progress(value: int) -> int:
+    return max(0, min(100, int(value)))
+
+
 def _load_bot_functions() -> tuple[Callable[[], Any], Callable[[], None]]:
     """Lazily import pipeline entry points so app startup stays lightweight.
 
@@ -67,7 +71,7 @@ def _manual_pipeline_runner() -> None:
     def _set_progress(stage: str, message: str, progress: int) -> None:
         with JOB_LOCK:
             JOB_STATE["stage"] = stage
-            JOB_STATE["progress"] = max(0, min(100, int(progress)))
+            JOB_STATE["progress"] = _clamp_progress(progress)
             JOB_STATE["last_message"] = message
             if stage == "error":
                 JOB_STATE["last_status"] = "failed"
@@ -127,6 +131,7 @@ def _manual_pipeline_runner() -> None:
 
 @app.before_request
 def _ensure_scheduler_and_db() -> None:
+    # Skip initialization for lightweight status endpoints to avoid extra overhead.
     if request.path in {"/health", "/job-status"}:
         return
 
