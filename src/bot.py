@@ -80,7 +80,9 @@ def _safe_trim(text: str, max_chars: int = 120) -> str:
     return text[: max_chars - 3].rstrip() + "..."
 
 
-def run_pipeline() -> PipelineResult | None:
+def run_pipeline(
+    progress_callback: Callable[[str, str, int], None] | None = None,
+) -> PipelineResult | None:
     """Run one full content-to-upload pipeline pass.
 
     Returns a PipelineResult on success, or None on failure.
@@ -102,6 +104,14 @@ def run_pipeline() -> PipelineResult | None:
     _pirate_log("[+] Pipeline run started")
     logger.info("Pipeline run started")
 
+    def _emit(stage: str, message: str, progress: int) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(stage, message, progress)
+        except Exception:  # noqa: BLE001
+            logger.exception("Progress callback failed for stage=%s", stage)
+
     output_dir = path_config.get("output_dir", "output")
     assets_video = path_config.get("background_video", "assets/gameplay.mp4")
     cookies_dir = path_config.get("cookies_dir", "cookies")
@@ -114,12 +124,14 @@ def run_pipeline() -> PipelineResult | None:
     init_db(history_db)
 
     try:
+        _emit("fetching_script", "Fetching script and selecting source...", 15)
         scraper_name, scraper_func = _choose_scraper()
         _pirate_log(f"[+] Selected source: {scraper_name}")
         logger.info("Selected source=%s", scraper_name)
     except Exception as error:  # noqa: BLE001
         _pirate_log(f"[-] Failed to select scraper: {error}")
         logger.exception("Failed to select scraper: %s", error)
+        _emit("error", f"Failed to select scraper: {error}", 100)
         return None
 
     try:
@@ -129,14 +141,17 @@ def run_pipeline() -> PipelineResult | None:
     except Exception as error:  # noqa: BLE001
         _pirate_log(f"[-] Scraper failed ({scraper_name}), skipping run: {error}")
         logger.exception("Scraper step failed (%s): %s", scraper_name, error)
+        _emit("error", f"Script fetching failed ({scraper_name}): {error}", 100)
         return None
 
     if has_content_fingerprint(source_text, db_path=history_db):
         _pirate_log("[-] Duplicate content detected in history.db. Skipping generation.")
         logger.info("Duplicate content skipped for source=%s", scraper_name)
+        _emit("error", "Duplicate content detected. Run skipped.", 100)
         return None
 
     try:
+        _emit("generating_audio", "Generating voiceover audio...", 45)
         _pirate_log("[+] Generating voiceover audio...")
         audio_path = generate_voiceover(
             text=source_text,
@@ -150,9 +165,11 @@ def run_pipeline() -> PipelineResult | None:
     except Exception as error:  # noqa: BLE001
         _pirate_log(f"[-] Failed to generate audio, skipping run: {error}")
         logger.exception("Audio generation failed: %s", error)
+        _emit("error", f"Audio generation failed: {error}", 100)
         return None
 
     try:
+        _emit("rendering_video", "Rendering final video...", 75)
         _pirate_log("[+] Building subtitle video from gameplay + narration...")
         video_path = generate_video(
             audio_path=audio_path,
@@ -165,6 +182,7 @@ def run_pipeline() -> PipelineResult | None:
     except Exception as error:  # noqa: BLE001
         _pirate_log(f"[-] Video generation failed, skipping upload: {error}")
         logger.exception("Video generation failed: %s", error)
+        _emit("error", f"Video rendering failed: {error}", 100)
         return None
 
     uploads_enabled = bool(uploader_config.get("enabled", True))
@@ -172,6 +190,7 @@ def run_pipeline() -> PipelineResult | None:
     headless_mode = bool(uploader_config.get("headless", os.getenv("PLAYWRIGHT_HEADLESS", "true").lower() == "true"))
     upload_result = None
     try:
+        _emit("uploading", "Uploading video...", 90)
         if not uploads_enabled:
             _pirate_log("[+] Upload stage skipped (uploader.enabled=false)")
             logger.info("Upload skipped because uploader.enabled=false")
@@ -204,6 +223,7 @@ def run_pipeline() -> PipelineResult | None:
     except Exception as error:  # noqa: BLE001
         _pirate_log(f"[-] Upload failed, will retry next schedule: {error}")
         logger.exception("Upload step failed: %s", error)
+        _emit("error", f"Upload failed: {error}", 100)
         return None
 
     try:
@@ -224,6 +244,7 @@ def run_pipeline() -> PipelineResult | None:
 
     _pirate_log("[+] Pipeline run completed successfully")
     logger.info("Pipeline run completed successfully")
+    _emit("complete", "Video generation completed successfully.", 100)
     return PipelineResult(
         source=scraper_name,
         audio_path=audio_path,

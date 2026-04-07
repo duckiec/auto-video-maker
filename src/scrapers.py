@@ -25,6 +25,13 @@ from config_store import get_config
 load_dotenv()
 LOGGER = logging.getLogger(__name__)
 MAX_OPENROUTER_MODEL_ATTEMPTS = 2  # initial model + one fallback model
+# Point of view (POV) perspective styles used for generated narratives.
+STORY_PERSPECTIVE_OPTIONS = [
+    "a first-person confession (example tone: 'I found out...')",
+    "a dramatic third-person observer perspective (example tone: 'She never knew that...')",
+    "a second-person warning (example tone: 'If your husband does this, run...')",
+    "the perspective of the villain or antagonist in the drama",
+]
 
 class ScraperError(RuntimeError):
     """Raised when a scraper cannot return valid content."""
@@ -242,6 +249,7 @@ def get_ai_story() -> str:
     openrouter_title = api_config.get("openrouter_title", "Auto Video Maker")
     selected_model = openrouter_model
     fallback_attempted = False
+    selected_pov = random.choice(STORY_PERSPECTIVE_OPTIONS)
 
     def _fetch() -> str:
         nonlocal selected_model, fallback_attempted
@@ -263,9 +271,15 @@ def get_ai_story() -> str:
                     {
                         "role": "user",
                         "content": (
-                            "Write a crazy historical fact as a vivid mini-story in about "
-                            f"{target_ai_words} words. Keep it clean, cinematic, and engaging from "
-                            "the first sentence."
+                            "Write a short, gripping narrative story (about 100-150 words) designed "
+                            "for a viral short-form video (TikTok/YouTube Shorts). "
+                            "Focus on high-drama, relatable themes with universal appeal, such as: "
+                            "family secrets, relationship betrayals, dramatic divorces, hidden "
+                            "identities, or shocking confessions. "
+                            "The story must have a strong hook in the first sentence and a dramatic "
+                            "or unresolved ending to encourage comments. "
+                            f"Write from {selected_pov}. "
+                            f"Target around {target_ai_words} words and output only plain text."
                         ),
                     },
                 ],
