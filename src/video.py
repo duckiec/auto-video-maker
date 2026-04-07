@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import random
 import re
+import logging
 import warnings
 from dataclasses import dataclass
 from datetime import datetime
@@ -36,6 +37,7 @@ SUBTITLE_MIN_LINE_HEIGHT = 1
 SUBTITLE_MIN_HORIZONTAL_PADDING = 24
 SUBTITLE_MIN_VERTICAL_PADDING = 14
 SUBTITLE_MIN_LINE_SPACING = 6
+logger = logging.getLogger(__name__)
 
 # Pillow >=10 removed Image.ANTIALIAS; MoviePy 1.0.3 still references it.
 if not hasattr(PIL.Image, "ANTIALIAS") and hasattr(PIL.Image, "Resampling"):
@@ -301,6 +303,7 @@ def _write_with_audio_failsafe(
                 remove_temp=True,
             )
         except Exception as error:  # noqa: BLE001
+            logger.warning("Video render attempt %s/%s failed: %s", attempt, max_attempts, error)
             last_error = error
             continue
 
@@ -311,6 +314,11 @@ def _write_with_audio_failsafe(
         if _rendered_video_has_audio(output_path):
             return
 
+        logger.warning(
+            "Video render attempt %s/%s produced output without audio track; retrying.",
+            attempt,
+            max_attempts,
+        )
         last_error = VideoGenerationError("Rendered video is missing an audio track.")
         try:
             output_path.unlink(missing_ok=True)

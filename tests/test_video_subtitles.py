@@ -83,10 +83,12 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             def __init__(self, _: str) -> None:
                 self.duration = EXPECTED_AUDIO_DURATION
                 self.start_value = None
+                self.start_calls = 0
                 self.duration_value = None
 
             def set_start(self, value: float) -> "_FakeAudioClip":
                 self.start_value = value
+                self.start_calls += 1
                 return self
 
             def set_duration(self, value: float) -> "_FakeAudioClip":
@@ -169,6 +171,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             audio_clip = created["audio"]
             final_clip = created["final"]
             self.assertEqual(audio_clip.start_value, 0)
+            self.assertEqual(audio_clip.start_calls, 1)
             self.assertAlmostEqual(audio_clip.duration_value, EXPECTED_AUDIO_DURATION)
             self.assertAlmostEqual(final_clip.duration_value, EXPECTED_AUDIO_DURATION)
             self.assertIs(final_clip.audio_value, audio_clip)
