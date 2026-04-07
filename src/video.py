@@ -332,14 +332,18 @@ def generate_video(
             stroke_width=subtitle_stroke_width,
         )
 
-        final_clip = CompositeVideoClip([base_clip, *subtitle_clips]).set_audio(audio_clip)
+        merged_audio = audio_clip.set_start(0).set_duration(target_duration)
+        final_clip = CompositeVideoClip([base_clip, *subtitle_clips]).set_duration(target_duration).set_audio(
+            merged_audio
+        )
+        temp_audio_path = Path(resolved_output_dir) / f"{output_path.stem}-temp-audio.m4a"
         final_clip.write_videofile(
             str(output_path),
             codec="libx264",
             audio_codec="aac",
             fps=int(base_clip.fps or output_fps),
             threads=2,
-            temp_audiofile=str(Path(resolved_output_dir) / "temp-audio.m4a"),
+            temp_audiofile=str(temp_audio_path),
             remove_temp=True,
         )
 
