@@ -76,7 +76,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
         importlib.util.find_spec("moviepy") is not None and importlib.util.find_spec("numpy") is not None,
         "moviepy and numpy are required for video generation tests",
     )
-    def test_generate_video_aligns_audio_and_uses_unique_temp_audiofile(self) -> None:
+    def test_generate_video_aligns_audio_and_uses_unique_temp_audio_file(self) -> None:
         video = _load_video_module()
 
         class _FakeAudioClip:

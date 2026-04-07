@@ -290,7 +290,7 @@ def _write_with_audio_failsafe(
     fps: int,
     max_attempts: int = 2,
 ) -> None:
-    last_error: Exception = VideoGenerationError("Unknown render failure.")
+    last_error: Exception = VideoGenerationError("Video rendering did not complete successfully.")
     for attempt in range(1, max_attempts + 1):
         temp_audio_path = Path(output_dir) / f"{output_path.stem}-temp-audio-{attempt}.m4a"
         try:
