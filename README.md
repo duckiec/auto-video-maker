@@ -258,6 +258,7 @@ You can edit config in:
 ### Media
 - `EDGE_TTS_VOICE` — optional voice override
 - `WHISPER_MODEL` — optional whisper model override
+- `SUBTITLE_FONT_PATH` — optional absolute path to a TTF/OTF font used for subtitle rendering
 
 ### Runtime
 - `LOG_LEVEL` — logging level for pipeline logger

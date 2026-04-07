@@ -59,6 +59,7 @@ class TestVideoSubtitleRendering(unittest.TestCase):
             self.assertGreater(clips[0].w, 0)
             self.assertGreater(clips[0].h, 0)
             self.assertLessEqual(clips[0].w, 960)
+            self.assertGreater(clips[0].h, 120)
             self.assertEqual(clips[0].__class__.__name__, "ImageClip")
         finally:
             for clip in clips:
