@@ -48,16 +48,16 @@ def _configure_logging() -> None:
     )
 
 
-def _choose_scraper() -> tuple[str, Callable[[], str]]:
-    from scrapers import get_ai_story, get_reddit_story, get_wiki_fact, has_reddit_credentials
+def _choose_scraper() -> tuple[str, Callable[[], object]]:
+    from scrapers import get_ai_story_package, get_reddit_story, get_wiki_fact, has_reddit_credentials
 
     config = get_config()
     selection_pool = config.get("scrapers", {}).get("selection_pool", ["reddit", "wiki", "ai"])
 
-    sources: dict[str, Callable[[], str]] = {
+    sources: dict[str, Callable[[], object]] = {
         "reddit": get_reddit_story,
         "wiki": get_wiki_fact,
-        "ai": get_ai_story,
+        "ai": get_ai_story_package,
     }
     available = [name for name in selection_pool if name in sources]
     if not available:
@@ -91,6 +91,7 @@ def run_pipeline(
 
     from audio import generate_voiceover
     from db import has_content_fingerprint, init_db, log_history_entry
+    from scrapers import generate_story_metadata
     from uploader import upload_video, upload_video_random_platform
     from video import generate_video
 
@@ -134,8 +135,42 @@ def run_pipeline(
         _emit("error", f"Failed to select scraper: {error}", 100)
         return None
 
+    dialogue_segments: list[dict[str, str]] | None = None
+    metadata: dict[str, object] = {}
+
     try:
-        source_text = scraper_func()
+        scraper_output = scraper_func()
+        source_text = scraper_output if isinstance(scraper_output, str) else ""
+        if scraper_name == "ai":
+            try:
+                ai_package = scraper_output if isinstance(scraper_output, dict) else {}
+                package_text = " ".join(str(ai_package.get("script", "")).split()).strip()
+                source_text = package_text or source_text
+                raw_segments = ai_package.get("segments")
+                if isinstance(raw_segments, list):
+                    dialogue_segments = [
+                        {
+                            "speaker": " ".join(str(item.get("speaker", "Narrator")).split()).strip()
+                            or "Narrator",
+                            "text": " ".join(str(item.get("text", "")).split()).strip(),
+                        }
+                        for item in raw_segments
+                        if isinstance(item, dict) and " ".join(str(item.get("text", "")).split()).strip()
+                    ]
+            except Exception as package_error:  # noqa: BLE001
+                logger.warning("AI dialogue package fallback to plain script: %s", package_error)
+
+        source_text = " ".join((source_text or "").split()).strip()
+        if not source_text:
+            raise RuntimeError("Generated script was empty.")
+
+        if scraper_name == "ai":
+            try:
+                metadata = generate_story_metadata(source_text)
+            except Exception as metadata_error:  # noqa: BLE001
+                logger.warning("Metadata generation failed; uploader fallback will be used: %s", metadata_error)
+                metadata = {}
+
         _pirate_log(f"[+] Scraped story/fact: {_safe_trim(source_text)}")
         logger.info("Scraped text preview: %s", _safe_trim(source_text))
     except Exception as error:  # noqa: BLE001
@@ -157,8 +192,10 @@ def run_pipeline(
             text=source_text,
             output_dir=output_dir,
             voice=audio_config.get("voice", os.getenv("EDGE_TTS_VOICE", "en-US-ChristopherNeural")),
-            rate=audio_config.get("rate", "+0%"),
+            rate=audio_config.get("rate", "+8%"),
             volume=audio_config.get("volume", "+0%"),
+            pitch=audio_config.get("pitch", "+2Hz"),
+            dialogue_segments=dialogue_segments,
         )
         _pirate_log(f"[+] Audio generated: {audio_path}")
         logger.info("Audio generated: %s", audio_path)
@@ -189,6 +226,18 @@ def run_pipeline(
     upload_platform = str(uploader_config.get("platform", os.getenv("UPLOAD_PLATFORM", "random"))).strip().lower()
     headless_mode = bool(uploader_config.get("headless", os.getenv("PLAYWRIGHT_HEADLESS", "true").lower() == "true"))
     upload_result = None
+    metadata_title = str(metadata.get("title", "")).strip() if isinstance(metadata, dict) else ""
+    metadata_tags = " ".join(
+        [
+            str(tag).strip()
+            for tag in (
+                metadata.get("hashtags", [])
+                if isinstance(metadata, dict) and isinstance(metadata.get("hashtags"), list)
+                else []
+            )
+            if str(tag).strip()
+        ]
+    )
     try:
         _emit("uploading", "Uploading video...", 90)
         if not uploads_enabled:
@@ -203,6 +252,8 @@ def run_pipeline(
                     platform=upload_platform,
                     cookies_dir=cookies_dir,
                     headless=headless_mode,
+                    custom_title=metadata_title or None,
+                    custom_tags=metadata_tags or None,
                 )
             else:
                 upload_result = upload_video_random_platform(
@@ -210,6 +261,8 @@ def run_pipeline(
                     source_text=source_text,
                     cookies_dir=cookies_dir,
                     headless=headless_mode,
+                    custom_title=metadata_title or None,
+                    custom_tags=metadata_tags or None,
                 )
 
             _pirate_log(
