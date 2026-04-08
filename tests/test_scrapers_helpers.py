@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json as jsonlib
 import sys
 from pathlib import Path
 import types
@@ -44,6 +45,14 @@ def _set_shuffle_order(*ordered_values: str):
         items[:] = list(ordered_values)
 
     return _apply
+
+
+def _story_text(word_count: int = 90) -> str:
+    words = [f"w{i}" for i in range(word_count)]
+    first = " ".join(words[:8]) + "."
+    second = " ".join(words[8:16]) + "."
+    rest = " ".join(words[16:])
+    return f"{first} {second} {rest}".strip()
 
 
 class TestScrapersHelpers(unittest.TestCase):
@@ -105,6 +114,7 @@ class TestScrapersHelpers(unittest.TestCase):
 
     def test_get_ai_story_falls_back_when_model_has_no_endpoints(self) -> None:
         calls = {"count": 0}
+        payload = {"script": _story_text(90), "segments": [{"speaker": "Narrator", "text": _story_text(45)}]}
 
         def _post(url: str, headers: dict, json: dict, timeout: int):
             self.assertEqual(url, "https://openrouter.ai/api/v1/chat/completions")
@@ -121,7 +131,7 @@ class TestScrapersHelpers(unittest.TestCase):
             self.assertEqual(json["model"], "google/gemini-2.5-flash:free")
             return types.SimpleNamespace(
                 status_code=200,
-                json=lambda: {"choices": [{"message": {"content": "word " * 80}}]},
+                json=lambda: {"choices": [{"message": {"content": jsonlib.dumps(payload)}}]},
                 text="",
             )
         config = {
@@ -176,12 +186,13 @@ class TestScrapersHelpers(unittest.TestCase):
 
     def test_get_ai_story_includes_dramatic_prompt_and_selected_pov(self) -> None:
         captured_payload = {}
+        payload = {"script": _story_text(90), "segments": [{"speaker": "Narrator", "text": _story_text(45)}]}
 
         def _post(url: str, headers: dict, json: dict, timeout: int):
             captured_payload["payload"] = json
             return types.SimpleNamespace(
                 status_code=200,
-                json=lambda: {"choices": [{"message": {"content": "word " * 90}}]},
+                json=lambda: {"choices": [{"message": {"content": jsonlib.dumps(payload)}}]},
                 text="",
             )
 
@@ -211,11 +222,46 @@ class TestScrapersHelpers(unittest.TestCase):
 
         self.assertGreaterEqual(len(result.split()), 60)
         user_prompt = captured_payload["payload"]["messages"][1]["content"]
-        self.assertIn("Write a short, gripping narrative story", user_prompt)
-        self.assertIn("high-drama, relatable themes", user_prompt)
-        self.assertIn("strong hook in the first sentence", user_prompt)
-        self.assertIn("unresolved ending", user_prompt)
-        self.assertIn(f"Write from {pov}", user_prompt)
+        self.assertIn("Write a high-drama story", user_prompt)
+        self.assertIn("First 1-2 sentences must be an aggressive shocking hook", user_prompt)
+        self.assertIn("between 150 and 180 words", user_prompt)
+        self.assertIn("Ban flowery and AI-sounding words", user_prompt)
+        self.assertIn(f"Narrative perspective for this run: {pov}", user_prompt)
+
+    def test_generate_story_metadata_returns_normalized_output(self) -> None:
+        payload = {"title": "Explosive Truth Comes Out", "description": "A secret detonates at dinner.", "hashtags": ["drama", "#viral", "#story"]}
+
+        def _post(url: str, headers: dict, json: dict, timeout: int):
+            return types.SimpleNamespace(
+                status_code=200,
+                json=lambda: {"choices": [{"message": {"content": jsonlib.dumps(payload)}}]},
+                text="",
+            )
+
+        config = {
+            "scrapers": {
+                "ai": {
+                    "metadata_model": "deepseek/deepseek-chat-v3-0324:free",
+                    "metadata_retry_attempts": 2,
+                }
+            },
+            "api": {"openrouter_base_url": "https://openrouter.ai/api/v1"},
+        }
+
+        with (
+            patch("scrapers.get_config", return_value=config),
+            patch(
+                "scrapers.os.getenv",
+                side_effect=lambda key, default=None: "k" if key == "OPENROUTER_API_KEY" else default,
+            ),
+            patch("scrapers.requests.post", side_effect=_post),
+        ):
+            result = scrapers.generate_story_metadata(_story_text(80))
+
+        self.assertIn("title", result)
+        self.assertIn("description", result)
+        self.assertIn("hashtags", result)
+        self.assertTrue(all(tag.startswith("#") for tag in result["hashtags"]))
 
 
 if __name__ == "__main__":

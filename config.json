@@ -34,16 +34,54 @@
       "min_words": 15
     },
     "ai": {
-      "target_words": 100,
-      "max_words": 140,
-      "min_words": 60,
-      "model": "deepseek/deepseek-chat-v3-0324:free"
+      "target_words": 165,
+      "max_words": 180,
+      "min_words": 150,
+      "llm_retry_attempts": 4,
+      "llm_retry_delay_seconds": 1.5,
+      "model": "deepseek/deepseek-chat-v3-0324:free",
+      "metadata_model": "deepseek/deepseek-chat-v3-0324:free",
+      "metadata_retry_attempts": 3
     }
   },
   "audio": {
+    "provider": "edge",
     "voice": "en-US-ChristopherNeural",
-    "rate": "+0%",
-    "volume": "+0%"
+    "edge_voice_pool": [
+      "en-US-AvaMultilingualNeural",
+      "en-US-JennyNeural",
+      "en-US-AriaNeural",
+      "en-US-GuyNeural",
+      "en-US-ChristopherNeural",
+      "en-US-EricNeural",
+      "en-GB-SoniaNeural",
+      "en-GB-RyanNeural"
+    ],
+    "speaker_voice_map": {
+      "Narrator": "en-US-ChristopherNeural",
+      "Protagonist": "en-US-JennyNeural",
+      "Antagonist": "en-US-GuyNeural",
+      "Witness": "en-GB-SoniaNeural"
+    },
+    "rate": "+8%",
+    "pitch": "+2Hz",
+    "volume": "+0%",
+    "tts_retry_attempts": 4,
+    "tts_retry_delay_seconds": 1.5,
+    "elevenlabs_voice_id": "",
+    "elevenlabs_model_id": "eleven_multilingual_v2",
+    "enable_background_music": true,
+    "background_music_path": "assets/drama_bgm.mp3",
+    "background_music_volume": 0.15,
+    "ducking_ratio": 0.28,
+    "enable_dynamic_sfx": true,
+    "sfx_volume": 0.35,
+    "keyword_sfx_map": {
+      "shocked": "assets/sfx/boom.mp3",
+      "screamed": "assets/sfx/whoosh.mp3",
+      "plot twist": "assets/sfx/riser.mp3",
+      "betrayed": "assets/sfx/boom.mp3"
+    }
   },
   "video": {
     "whisper_model": "base",

@@ -36,7 +36,7 @@ class TestBotHelpers(unittest.TestCase):
         schedule.run_pending = lambda: None
         schedule.ScheduleValueError = ValueError
         scrapers = types.ModuleType("scrapers")
-        scrapers.get_ai_story = lambda: "ai"
+        scrapers.get_ai_story_package = lambda: {"script": "ai", "segments": [{"speaker": "Narrator", "text": "ai"}]}
         scrapers.get_reddit_story = lambda: "reddit"
         scrapers.get_wiki_fact = lambda: "wiki"
         scrapers.has_reddit_credentials = lambda: False

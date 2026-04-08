@@ -252,6 +252,8 @@ def upload_video(
     platform: str = "youtube",
     cookies_dir: str | os.PathLike[str] = "cookies",
     headless: bool = True,
+    custom_title: str | None = None,
+    custom_tags: str | None = None,
 ) -> UploadResult:
     """Upload a generated video using saved Playwright storage state."""
 
@@ -282,8 +284,8 @@ def upload_video(
     )
     _ensure_file_exists(state_file, "Storage state file")
 
-    title = _generate_title(source_text)
-    tags = _extract_tags(source_text)
+    title = _normalize_text(custom_title) if custom_title else _generate_title(source_text)
+    tags = _normalize_text(custom_tags) if custom_tags else _extract_tags(source_text)
 
     try:
         with sync_playwright() as playwright:
@@ -323,6 +325,8 @@ def upload_video_random_platform(
     source_text: str,
     cookies_dir: str | os.PathLike[str] = "cookies",
     headless: bool = True,
+    custom_title: str | None = None,
+    custom_tags: str | None = None,
 ) -> UploadResult:
     """Upload to a randomly selected supported platform."""
 
@@ -336,4 +340,6 @@ def upload_video_random_platform(
         platform=platform,
         cookies_dir=cookies_dir,
         headless=headless,
+        custom_title=custom_title,
+        custom_tags=custom_tags,
     )

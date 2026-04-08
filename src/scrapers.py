@@ -8,12 +8,13 @@ Phase 1 scope:
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import re
 import time
 import logging
-from typing import Callable, Dict, List
+from typing import Any, Callable, Dict, List
 
 import praw
 import requests
@@ -25,13 +26,23 @@ from config_store import get_config
 load_dotenv()
 LOGGER = logging.getLogger(__name__)
 MAX_OPENROUTER_MODEL_ATTEMPTS = 2  # initial model + one fallback model
-# Point of view (POV) perspective styles used for generated narratives.
 STORY_PERSPECTIVE_OPTIONS = [
-    "a first-person confession (example tone: 'I found out...')",
-    "a dramatic third-person observer perspective (example tone: 'She never knew that...')",
-    "a second-person warning (example tone: 'If your husband does this, run...')",
-    "the perspective of the villain or antagonist in the drama",
+    "a first-person confession",
+    "a dramatic third-person observer",
+    "the antagonist's perspective",
+    "a second-person warning",
 ]
+FORBIDDEN_FLOWERY_TERMS = (
+    "labyrinthine",
+    "ethereal",
+    "tapestry",
+    "hauntingly",
+    "cacophony",
+    "delve",
+    "whimsical",
+    "resonated",
+)
+
 
 class ScraperError(RuntimeError):
     """Raised when a scraper cannot return valid content."""
@@ -54,6 +65,14 @@ def _word_count(text: str) -> int:
 def _truncate_to_words(text: str, max_words: int) -> str:
     words = _normalize_text(text).split()
     return " ".join(words[:max_words])
+
+
+def _extract_sentences(text: str) -> list[str]:
+    cleaned = _normalize_text(text)
+    if not cleaned:
+        return []
+    parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+", cleaned) if part.strip()]
+    return parts
 
 
 def _is_openrouter_model_unavailable_error(error: Exception, model_name: str) -> bool:
@@ -95,12 +114,14 @@ def _extract_openrouter_error_message(response: requests.Response) -> str:
     return str(payload)
 
 
-def _retry(operation: Callable[[], str], attempts: int = 3, delay_seconds: float = 1.5) -> str:
+def _retry(
+    operation: Callable[[], Any], attempts: int = 3, delay_seconds: float = 1.5
+) -> Any:
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
             result = operation()
-            if not result:
+            if isinstance(result, str) and not result:
                 raise ScraperError("Operation returned empty text")
             return result
         except Exception as error:  # noqa: BLE001 - broad for resilient pipeline wrapper
@@ -109,6 +130,177 @@ def _retry(operation: Callable[[], str], attempts: int = 3, delay_seconds: float
                 break
             time.sleep(delay_seconds * attempt)
     raise ScraperError(f"Operation failed after {attempts} attempts: {last_error}")
+
+
+def _extract_json_object(content: str) -> dict[str, Any] | None:
+    text = _normalize_text(content)
+    if not text:
+        return None
+
+    fenced_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", content, flags=re.DOTALL)
+    candidate = fenced_match.group(1) if fenced_match else content
+    candidate = candidate.strip()
+
+    try:
+        parsed = json.loads(candidate)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        pass
+
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    try:
+        parsed = json.loads(candidate[start : end + 1])
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+def _call_openrouter_chat(
+    *,
+    messages: list[dict[str, str]],
+    model: str,
+    max_tokens: int,
+    temperature: float,
+    retry_attempts: int,
+    retry_delay_seconds: float,
+) -> str:
+    config = get_config()
+    api_config = config.get("api", {})
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise ScraperError("Missing OPENROUTER_API_KEY in environment.")
+
+    openrouter_base_url = str(
+        api_config.get("openrouter_base_url", "https://openrouter.ai/api/v1")
+    ).rstrip("/")
+    openrouter_referer = api_config.get("openrouter_referer", "https://local.video-factory")
+    openrouter_title = api_config.get("openrouter_title", "Auto Video Maker")
+
+    selected_model = model
+    fallback_attempted = False
+    last_error: Exception | None = None
+
+    for attempt in range(1, max(1, retry_attempts) + 1):
+        for _ in range(MAX_OPENROUTER_MODEL_ATTEMPTS):
+            payload = {
+                "model": selected_model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "messages": messages,
+            }
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": str(openrouter_referer),
+                "X-Title": str(openrouter_title),
+            }
+            try:
+                response = requests.post(
+                    f"{openrouter_base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=45,
+                )
+            except Exception as error:  # noqa: BLE001
+                last_error = ScraperError(f"OpenRouter request transport error: {error}")
+                break
+
+            if response.status_code >= 500:
+                last_error = ScraperError(
+                    f"OpenRouter upstream error ({response.status_code}): {response.text}"
+                )
+                break
+
+            if response.status_code >= 400:
+                error_message = _extract_openrouter_error_message(response)
+                if (
+                    response.status_code == 404
+                    and not fallback_attempted
+                    and _is_openrouter_model_unavailable_error(
+                        ScraperError(error_message), selected_model
+                    )
+                ):
+                    fallback_model = _pick_openrouter_fallback_model(selected_model)
+                    if fallback_model:
+                        LOGGER.warning(
+                            "OpenRouter model '%s' unavailable, retrying with fallback '%s'.",
+                            selected_model,
+                            fallback_model,
+                        )
+                        selected_model = fallback_model
+                        fallback_attempted = True
+                        continue
+                last_error = ScraperError(
+                    f"OpenRouter request failed ({response.status_code}): {error_message}"
+                )
+                break
+
+            completion = response.json()
+            if not isinstance(completion, dict):
+                last_error = ScraperError("OpenRouter returned a non-object JSON payload.")
+                break
+
+            choices = completion.get("choices")
+            if not isinstance(choices, list) or not choices:
+                last_error = ScraperError("OpenRouter response is missing choices.")
+                break
+
+            first_choice = choices[0]
+            if not isinstance(first_choice, dict):
+                last_error = ScraperError("OpenRouter response has invalid choice format.")
+                break
+
+            message = first_choice.get("message")
+            if not isinstance(message, dict):
+                last_error = ScraperError("OpenRouter response is missing message payload.")
+                break
+
+            raw_content = message.get("content")
+            text = _normalize_text(str(raw_content or ""))
+            if not text:
+                last_error = ScraperError("OpenRouter returned empty content.")
+                break
+            return text
+
+        if attempt < max(1, retry_attempts):
+            time.sleep(max(0.2, retry_delay_seconds) * attempt)
+
+    raise ScraperError(
+        f"OpenRouter call failed after {max(1, retry_attempts)} attempts: {last_error}"
+    )
+
+
+def _validate_story_hook(script: str) -> None:
+    sentences = _extract_sentences(script)
+    if len(sentences) < 2:
+        raise ScraperError("Story must start with at least two hook-ready sentences.")
+
+    hook_text = f"{sentences[0]} {sentences[1]}".strip()
+    if _word_count(hook_text) > 45:
+        raise ScraperError("Hook is too long for the first 3 seconds.")
+
+
+def _sanitize_dialogue_segments(raw_segments: Any, script_fallback: str) -> list[dict[str, str]]:
+    if not isinstance(raw_segments, list):
+        return [{"speaker": "Narrator", "text": script_fallback}]
+
+    segments: list[dict[str, str]] = []
+    for item in raw_segments:
+        if not isinstance(item, dict):
+            continue
+        speaker = _normalize_text(str(item.get("speaker", "Narrator"))) or "Narrator"
+        text = _normalize_text(str(item.get("text", "")))
+        if not text:
+            continue
+        segments.append({"speaker": speaker[:40], "text": text})
+
+    if not segments:
+        return [{"speaker": "Narrator", "text": script_fallback}]
+    return segments
 
 
 def get_reddit_story() -> str:
@@ -226,127 +418,187 @@ def get_wiki_fact() -> str:
     return _retry(_fetch, attempts=4, delay_seconds=1.2)
 
 
-def get_ai_story() -> str:
-    """Generate a high-retention ~100-word story using OpenRouter."""
+def get_ai_story_package() -> dict[str, Any]:
+    """Generate a high-drama 60s script with optional multi-voice dialogue segments."""
 
     config = get_config()
     ai_config = config.get("scrapers", {}).get("ai", {})
-    api_config = config.get("api", {})
 
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        raise ScraperError("Missing OPENROUTER_API_KEY in environment.")
-
-    openrouter_base_url = api_config.get("openrouter_base_url", "https://openrouter.ai/api/v1")
     openrouter_model = os.getenv(
         "OPENROUTER_MODEL",
         ai_config.get("model", "deepseek/deepseek-chat-v3-0324:free"),
     )
-    target_ai_words = int(ai_config.get("target_words", 100))
-    ai_max_words = int(ai_config.get("max_words", 140))
-    ai_min_words = int(ai_config.get("min_words", 60))
-    openrouter_referer = api_config.get("openrouter_referer", "https://local.video-factory")
-    openrouter_title = api_config.get("openrouter_title", "Auto Video Maker")
-    selected_model = openrouter_model
-    fallback_attempted = False
+    target_ai_words = int(ai_config.get("target_words", 165))
+    ai_max_words = int(ai_config.get("max_words", 180))
+    ai_min_words = int(ai_config.get("min_words", 150))
+    llm_retry_attempts = int(ai_config.get("llm_retry_attempts", 4))
+    llm_retry_delay_seconds = float(ai_config.get("llm_retry_delay_seconds", 1.5))
     selected_pov = random.choice(STORY_PERSPECTIVE_OPTIONS)
 
+    system_prompt = (
+        "You write viral short-form social drama scripts for voiceover. "
+        "The output must feel raw, conversational, human, and emotionally intense. "
+        "Never use poetic, flowery, corporate, or AI-sounding language. "
+        "Output ONLY valid JSON."
+    )
+    user_prompt = (
+        "Write a high-drama story about messy divorces, explosive family secrets, brutal betrayals, "
+        "or shocking confessions.\n"
+        f"Narrative perspective for this run: {selected_pov}.\n"
+        "STRICT RULES:\n"
+        "1) First 1-2 sentences must be an aggressive shocking hook designed for the first 3 seconds.\n"
+        "2) Keep the full script between 150 and 180 words for a 60-second voiceover.\n"
+        "3) Ban flowery and AI-sounding words. Do not use these terms: "
+        f"{', '.join(FORBIDDEN_FLOWERY_TERMS)}.\n"
+        "4) Use plain conversational English only.\n"
+        "5) End on a cliffhanger or unresolved punchline to trigger comments.\n"
+        "Return this exact JSON shape:\n"
+        "{\n"
+        "  \"script\": \"full script text\",\n"
+        "  \"segments\": [\n"
+        "    {\"speaker\": \"Narrator\", \"text\": \"line\"},\n"
+        "    {\"speaker\": \"Protagonist\", \"text\": \"line\"},\n"
+        "    {\"speaker\": \"Antagonist\", \"text\": \"line\"}\n"
+        "  ]\n"
+        "}\n"
+        f"Target about {target_ai_words} words in script."
+    )
+
+    response_text = _call_openrouter_chat(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        model=str(openrouter_model),
+        max_tokens=420,
+        temperature=1.05,
+        retry_attempts=llm_retry_attempts,
+        retry_delay_seconds=llm_retry_delay_seconds,
+    )
+
+    parsed = _extract_json_object(response_text)
+    if isinstance(parsed, dict):
+        script = _normalize_text(str(parsed.get("script", "")))
+        if not script:
+            script = _normalize_text(response_text)
+        segments = _sanitize_dialogue_segments(parsed.get("segments"), script)
+    else:
+        script = _normalize_text(response_text)
+        segments = [{"speaker": "Narrator", "text": script}]
+
+    if not script:
+        raise ScraperError("AI story response was empty.")
+
+    word_count = _word_count(script)
+    if word_count > ai_max_words:
+        script = _truncate_to_words(script, ai_max_words)
+
+    word_count = _word_count(script)
+    if word_count < ai_min_words or word_count > ai_max_words:
+        raise ScraperError(
+            f"AI story length invalid: {word_count} words (expected {ai_min_words}-{ai_max_words})."
+        )
+
+    _validate_story_hook(script)
+
+    return {
+        "script": script,
+        "segments": segments,
+        "pov": selected_pov,
+        "source": "ai",
+    }
+
+
+def get_ai_story() -> str:
+    """Generate a high-retention 60-second story script using OpenRouter."""
+
+    config = get_config()
+    ai_config = config.get("scrapers", {}).get("ai", {})
+    llm_retry_attempts = int(ai_config.get("llm_retry_attempts", 4))
+    llm_retry_delay_seconds = float(ai_config.get("llm_retry_delay_seconds", 1.5))
+
     def _fetch() -> str:
-        nonlocal selected_model, fallback_attempted
-        base_url = str(openrouter_base_url).rstrip("/")
-        chat_url = f"{base_url}/chat/completions"
-        for _ in range(MAX_OPENROUTER_MODEL_ATTEMPTS):
-            payload = {
-                "model": selected_model,
-                "temperature": 1.0,
-                "max_tokens": 220,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You write punchy, high-retention short-form stories for voiceover narration. "
-                            "Output only plain text."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            "Write a short, gripping narrative story (about 100-150 words) designed "
-                            "for a viral short-form video (TikTok/YouTube Shorts). "
-                            "Focus on high-drama, relatable themes with universal appeal, such as: "
-                            "family secrets, relationship betrayals, dramatic divorces, hidden "
-                            "identities, or shocking confessions. "
-                            "The story must have a strong hook in the first sentence and a dramatic "
-                            "or unresolved ending to encourage comments. "
-                            f"Write from {selected_pov}. "
-                            f"Target around {target_ai_words} words and output only plain text."
-                        ),
-                    },
-                ],
-            }
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": openrouter_referer,
-                "X-Title": openrouter_title,
-            }
-            response = requests.post(
-                chat_url,
-                headers=headers,
-                json=payload,
-                timeout=45,
-            )
-            if response.status_code >= 400:
-                error_message = _extract_openrouter_error_message(response)
-                if (
-                    response.status_code == 404
-                    and not fallback_attempted
-                    and _is_openrouter_model_unavailable_error(
-                        ScraperError(error_message), selected_model
-                    )
-                ):
-                    fallback_model = _pick_openrouter_fallback_model(selected_model)
-                    if fallback_model:
-                        LOGGER.warning(
-                            "OpenRouter model '%s' unavailable, retrying with fallback '%s'.",
-                            selected_model,
-                            fallback_model,
-                        )
-                        selected_model = fallback_model
-                        fallback_attempted = True
-                        continue
-                raise ScraperError(
-                    f"OpenRouter request failed ({response.status_code}): {error_message}"
-                )
-            completion = response.json()
-            break
+        package = get_ai_story_package()
+        story = _normalize_text(str(package.get("script", "")))
+        if not story:
+            raise ScraperError("AI story package returned empty script.")
+        return story
 
-        if not isinstance(completion, dict):
-            raise ScraperError("OpenRouter returned a non-object JSON payload.")
-        choices = completion.get("choices")
-        if not isinstance(choices, list) or not choices:
-            raise ScraperError("OpenRouter response is missing choices.")
-        first_choice = choices[0]
-        if not isinstance(first_choice, dict):
-            raise ScraperError("OpenRouter response has invalid choice format.")
-        message = first_choice.get("message")
-        if not isinstance(message, dict):
-            raise ScraperError("OpenRouter response is missing message payload.")
-        raw_content = message.get("content")
-        text = _normalize_text(str(raw_content or "").strip())
-        if not text:
-            raise ScraperError("OpenRouter returned empty content.")
+    return _retry(
+        _fetch,
+        attempts=max(1, llm_retry_attempts),
+        delay_seconds=max(0.2, llm_retry_delay_seconds),
+    )
 
-        word_count = _word_count(text)
-        if word_count > ai_max_words:
-            text = _truncate_to_words(text, ai_max_words)
 
-        if _word_count(text) < ai_min_words:
-            raise ScraperError("AI story was too short.")
+def generate_story_metadata(script_text: str) -> dict[str, Any]:
+    """Generate title, description, and hashtags for an already generated story."""
 
-        return text
+    config = get_config()
+    ai_config = config.get("scrapers", {}).get("ai", {})
+    model = str(ai_config.get("metadata_model", ai_config.get("model", "deepseek/deepseek-chat-v3-0324:free")))
+    retry_attempts = int(ai_config.get("metadata_retry_attempts", 3))
 
-    return _retry(_fetch)
+    cleaned_script = _normalize_text(script_text)
+    if not cleaned_script:
+        raise ScraperError("Cannot generate metadata from empty script.")
+
+    system_prompt = (
+        "You generate short-form viral metadata. "
+        "Output ONLY valid JSON with keys: title, description, hashtags."
+    )
+    user_prompt = (
+        "Generate optimized metadata for this story.\n"
+        "Rules:\n"
+        "- title: 45-80 characters, punchy, curiosity-inducing\n"
+        "- description: 1-2 sentences, conversational\n"
+        "- hashtags: list of 6-10 hashtags, each prefixed with #\n"
+        "Return valid JSON only.\n\n"
+        f"Story:\n{cleaned_script}"
+    )
+
+    def _generate() -> dict[str, Any]:
+        raw = _call_openrouter_chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            model=model,
+            max_tokens=220,
+            temperature=0.8,
+            retry_attempts=retry_attempts,
+            retry_delay_seconds=1.0,
+        )
+        parsed = _extract_json_object(raw) or {}
+
+        title = _normalize_text(str(parsed.get("title", "")))
+        description = _normalize_text(str(parsed.get("description", "")))
+        hashtags_raw = parsed.get("hashtags", [])
+        hashtags: list[str] = []
+        if isinstance(hashtags_raw, list):
+            for item in hashtags_raw:
+                tag = _normalize_text(str(item))
+                if not tag:
+                    continue
+                if not tag.startswith("#"):
+                    tag = f"#{tag.lstrip('#')}"
+                if tag not in hashtags:
+                    hashtags.append(tag)
+
+        if not title:
+            title = _truncate_to_words(cleaned_script, 12).rstrip(".") + "..."
+        if not description:
+            description = _truncate_to_words(cleaned_script, 28)
+        if not hashtags:
+            hashtags = ["#shorts", "#story", "#drama", "#viral", "#plottwist", "#confession"]
+
+        return {
+            "title": title[:100],
+            "description": description[:240],
+            "hashtags": hashtags[:10],
+        }
+
+    return _retry(_generate, attempts=max(1, retry_attempts), delay_seconds=1.0)
 
 
 def get_openrouter_models() -> List[str]:
