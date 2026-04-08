@@ -42,6 +42,7 @@ FORBIDDEN_FLOWERY_TERMS = (
     "whimsical",
     "resonated",
 )
+MAX_HOOK_WORDS_FOR_3_SECONDS = 45
 
 
 class ScraperError(RuntimeError):
@@ -280,8 +281,15 @@ def _validate_story_hook(script: str) -> None:
         raise ScraperError("Story must start with at least two hook-ready sentences.")
 
     hook_text = f"{sentences[0]} {sentences[1]}".strip()
-    if _word_count(hook_text) > 45:
+    if _word_count(hook_text) > MAX_HOOK_WORDS_FOR_3_SECONDS:
         raise ScraperError("Hook is too long for the first 3 seconds.")
+
+
+def _validate_forbidden_vocabulary(script: str) -> None:
+    lowered = script.lower()
+    blocked = [term for term in FORBIDDEN_FLOWERY_TERMS if term.lower() in lowered]
+    if blocked:
+        raise ScraperError(f"Story used forbidden flowery vocabulary: {', '.join(blocked)}")
 
 
 def _sanitize_dialogue_segments(raw_segments: Any, script_fallback: str) -> list[dict[str, str]]:
@@ -500,6 +508,7 @@ def get_ai_story_package() -> dict[str, Any]:
         )
 
     _validate_story_hook(script)
+    _validate_forbidden_vocabulary(script)
 
     return {
         "script": script,
@@ -581,7 +590,10 @@ def generate_story_metadata(script_text: str) -> dict[str, Any]:
                 if not tag:
                     continue
                 if not tag.startswith("#"):
-                    tag = f"#{tag.lstrip('#')}"
+                    stripped = tag.lstrip("#")
+                    if not stripped:
+                        continue
+                    tag = f"#{stripped}"
                 if tag not in hashtags:
                     hashtags.append(tag)
 

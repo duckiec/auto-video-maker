@@ -225,7 +225,11 @@ def _concat_audio_segments(segment_paths: list[Path], output_path: Path) -> Path
     return output_path
 
 
-def _estimate_keyword_timestamps(script_text: str, duration_seconds: float) -> dict[str, list[float]]:
+def _estimate_keyword_timestamps(
+    script_text: str,
+    duration_seconds: float,
+    keywords: list[str],
+) -> dict[str, list[float]]:
     lowered = script_text.lower()
     tokens = re.findall(r"[a-z']+", lowered)
     if not tokens or duration_seconds <= 0:
@@ -237,7 +241,7 @@ def _estimate_keyword_timestamps(script_text: str, duration_seconds: float) -> d
     ]
 
     timeline: dict[str, list[float]] = {}
-    for keyword in ["shocked", "screamed", "plot twist", "betrayed"]:
+    for keyword in [item.strip().lower() for item in keywords if item and item.strip()]:
         pieces = keyword.split()
         hits: list[float] = []
         if len(pieces) == 1:
@@ -286,7 +290,12 @@ def _overlay_background_and_sfx(
 
         if enable_dynamic_sfx:
             keyword_sfx_map = audio_config.get("keyword_sfx_map", {})
-            keyword_times = _estimate_keyword_timestamps(script_text=script_text, duration_seconds=float(narration.duration or 0.0))
+            keywords = list(keyword_sfx_map.keys()) if isinstance(keyword_sfx_map, dict) else []
+            keyword_times = _estimate_keyword_timestamps(
+                script_text=script_text,
+                duration_seconds=float(narration.duration or 0.0),
+                keywords=keywords,
+            )
             sfx_volume = float(audio_config.get("sfx_volume", 0.35))
             for keyword, hits in keyword_times.items():
                 sfx_file = Path(str(keyword_sfx_map.get(keyword, "")))
